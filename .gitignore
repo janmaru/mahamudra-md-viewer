@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.claude/
+tests
+.diagram_cache/
+settings.json
+build/
+dist/
+errors
+scripts/preview_*.png

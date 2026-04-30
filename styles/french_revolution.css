@@ -1,0 +1,113 @@
+/* French Revolution Theme — Liberté, Égalité, Fraternité
+   Palette inspired by revolutionary-era France:
+   Parchment (#F5F0E1), Bleu de France (#002395), Rouge (#ED2939),
+   Gold/Ochre (#C9A227), Dark Charcoal (#2C2C2C)                  */
+
+body {
+    font-family: Georgia, "Palatino Linotype", Palatino, "Book Antiqua", serif;
+    line-height: 1.7;
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 20px 32px;
+    color: #2C2C2C;
+    background: #F5F0E1;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    margin-top: 24px;
+    margin-bottom: 16px;
+    font-weight: 700;
+    line-height: 1.25;
+    color: #002395;
+}
+
+h1 {
+    font-size: 2em;
+    border-bottom: 2px solid #C9A227;
+    padding-bottom: 0.3em;
+}
+
+h2 {
+    font-size: 1.5em;
+    border-bottom: 1px solid #C9A227;
+    padding-bottom: 0.3em;
+}
+
+h3 {
+    font-size: 1.25em;
+}
+
+code {
+    background: #FAF7F0;
+    padding: 0.2em 0.4em;
+    border-radius: 3px;
+    font-size: 85%;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    color: #2C2C2C;
+}
+
+pre {
+    background: #FAF7F0;
+    padding: 16px;
+    border-radius: 6px;
+    overflow-x: auto;
+    line-height: 1.45;
+    border-left: 3px solid #C9A227;
+}
+
+pre code {
+    background: none;
+    padding: 0;
+}
+
+blockquote {
+    margin: 0;
+    padding: 0 1em;
+    color: #4A5568;
+    border-left: 0.25em solid #C9A227;
+    font-style: italic;
+}
+
+table {
+    border-collapse: collapse;
+    width: 100%;
+    margin-bottom: 16px;
+}
+
+th, td {
+    padding: 6px 13px;
+    border: 1px solid #C9A227;
+}
+
+th {
+    font-weight: 700;
+    background: #FAF7F0;
+    color: #002395;
+}
+
+tr:nth-child(even) {
+    background: #FAF7F0;
+}
+
+a {
+    color: #002395;
+    text-decoration: none;
+}
+
+a:hover {
+    color: #ED2939;
+    text-decoration: underline;
+}
+
+img {
+    max-width: 100%;
+}
+
+hr {
+    border: none;
+    border-top: 2px solid #C9A227;
+    margin: 24px 0;
+}
+
+mark.search-match { background-color: #2b4570; color: #f0e6d3; border-radius: 2px; padding: 0 2px; }
+mark.search-current { background-color: #8b0000; color: #ffffff; border-radius: 2px; padding: 0 2px; }

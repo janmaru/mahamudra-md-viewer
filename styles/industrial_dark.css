@@ -1,0 +1,107 @@
+/* Industrial-Editorial Dark Theme — IDE meets Publishing Tool
+   Palette: Background (#0d1117), Panel (#161b22), Border (#30363d),
+   Primary Text (#e6edf3), Secondary (#8b949e), Accent (#58a6ff)    */
+
+body {
+    font-family: 'Lora', Georgia, serif;
+    line-height: 1.7;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 40px 60px;
+    color: #e6edf3;
+    background: #0d1117;
+    animation: fadeIn 0.4s ease-in;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+h1, h2, h3, h4, h5, h6 {
+    font-family: 'Syne', sans-serif;
+    margin-top: 32px;
+    margin-bottom: 16px;
+    font-weight: 700;
+    line-height: 1.25;
+    color: #58a6ff;
+}
+
+h1 { font-size: 2.2em; border-bottom: 1px solid #30363d; padding-bottom: 0.3em; }
+h2 { font-size: 1.7em; border-bottom: 1px solid #30363d; padding-bottom: 0.3em; }
+h3 { font-size: 1.4em; }
+
+code {
+    background: #161b22;
+    padding: 0.2em 0.4em;
+    border-radius: 4px;
+    font-size: 85%;
+    font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+    color: #e6edf3;
+}
+
+pre {
+    background: #161b22;
+    padding: 20px;
+    border-radius: 6px;
+    overflow-x: auto;
+    line-height: 1.45;
+    border: 1px solid #30363d;
+}
+
+pre code {
+    background: none;
+    padding: 0;
+}
+
+blockquote {
+    margin: 0;
+    padding: 0 1.5em;
+    color: #8b949e;
+    border-left: 4px solid #1f6feb;
+    font-style: italic;
+}
+
+table {
+    border-collapse: collapse;
+    width: 100%;
+    margin-bottom: 24px;
+}
+
+th, td {
+    padding: 10px 15px;
+    border: 1px solid #30363d;
+}
+
+th {
+    font-weight: 700;
+    background: #161b22;
+    color: #58a6ff;
+}
+
+tr:nth-child(even) {
+    background: #161b22;
+}
+
+a {
+    color: #58a6ff;
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+img {
+    max-width: 100%;
+    border-radius: 4px;
+}
+
+hr {
+    border: none;
+    border-top: 2px solid #30363d;
+    margin: 40px 0;
+}
+
+mark.search-match { background-color: #4a5568; color: #e2e8f0; border-radius: 2px; padding: 0 2px; }
+mark.search-current { background-color: #9b2c2c; color: #ffffff; border-radius: 2px; padding: 0 2px; }
