@@ -18,7 +18,7 @@ Friedrich - Document Reader is a modern, lightweight Markdown viewer designed to
 ### 3. Navigation and UX
 - **Triple Panel Layout**:
     - **Recent Files**: Quick access to the last 10 opened documents.
-    - **Explorer**: File system tree navigation with instant search filters.
+    - **Explorer**: File system tree navigation with instant search filters. Items are sorted by modification date in descending order (most recently modified first), with folders listed before files. The sort toggle reverses this order.
     - **Viewer**: Central reading area.
 - **UI Theme**: Both **Dark** (VS Code inspired) and **Light** interface themes.
 - **History**: "Back" navigation to return to previously viewed documents.

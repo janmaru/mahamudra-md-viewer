@@ -21,7 +21,7 @@ To ensure UI stability and prevent regressions, refer to the following documenta
 - **Markdown Themes**: Multiple CSS styles (VS Code Dark, Industrial, French Revolution).
 - **Diagram Engines**: Native support for **Mermaid** and **PlantUML**.
 - **PDF Export**: High-fidelity PDF generation via headless Edge.
-- **Smart Explorer**: File system tree with live filtering and recent files history.
+- **Smart Explorer**: File system tree with live filtering and recent files history. Entries are sorted by modification date (newest first), with folders shown above files.
 - **Zen Mode**: Distraction-free reading (F11/Esc).
 - **⚡ RSVP Reader**: Companion `.rd` files render as a sentence-by-sentence speed reader (200–1200 WPM).
 - **🌍 Multi-Language Support**: English and Italian via CLI parameter.
