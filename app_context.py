@@ -24,6 +24,7 @@ class TabInfo:
     container: Optional[tk.Frame] = None
     html_frame: Optional[HtmlFrame] = None
     pdf_viewer: Optional[tk.Widget] = None
+    rsvp_player: Optional[tk.Widget] = None
     source_text: Optional[tk.Text] = None
     search_bar: Optional[SearchBar] = None
 

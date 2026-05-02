@@ -73,6 +73,7 @@ ICONS = {
     ".csv": "\u2637",
     ".log": "\u2630",
     ".pdf": "\u25a0",
+    ".rd": "\u25b6",
     "folder": "\u25b8",
     "folder_open": "\u25be",
 }

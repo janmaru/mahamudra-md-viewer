@@ -14,7 +14,9 @@ SUPPORTED_EXTS = (
     ".md", ".markdown", ".mdown", ".mkd", ".txt", ".csv", ".log", ".pdf",
     ".py", ".js", ".ts", ".json", ".yaml", ".yml",
     ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp",
+    ".rd",
 )
+_MD_EXTS = (".md", ".markdown", ".mdown", ".mkd")
 
 
 class SidePanel:
@@ -121,23 +123,58 @@ class SidePanel:
         except PermissionError:
             return
 
+        rd_by_stem: dict[str, Path] = {
+            p.stem.lower(): p
+            for p in entries
+            if p.is_file() and p.suffix.lower() == ".rd"
+        }
+        paired_rd_paths: set[Path] = set()
+
         for p in entries:
             # Skip hidden folders
             if any(part.startswith('.') for part in p.relative_to(self._ctx.scan_dir).parts):
                 continue
-            icon = ICONS.get(p.suffix.lower(), "\u2022") if p.is_file() else ICONS["folder"]
-            
+            ext = p.suffix.lower()
+
+            # Skip .rd that has a matching .md sibling — it's rendered as a child below.
+            if p.is_file() and ext == ".rd":
+                stem = p.stem.lower()
+                md_sibling = next(
+                    (q for q in entries
+                     if q.is_file() and q.suffix.lower() in _MD_EXTS and q.stem.lower() == stem),
+                    None,
+                )
+                if md_sibling is not None:
+                    continue
+
+            icon = ICONS.get(ext, "\u2022") if p.is_file() else ICONS["folder"]
+
             # Check if file is supported
-            is_disabled = p.is_file() and p.suffix.lower() not in SUPPORTED_EXTS
+            is_disabled = p.is_file() and ext not in SUPPORTED_EXTS
             tags = ("disabled",) if is_disabled else ()
-            
+
             item_id = self._tree.insert(parent, "end", text=f"  {icon}  {p.name}", values=[str(p)], tags=tags)
-            
+
             if is_disabled:
                 self._disabled_items.add(item_id)
-            
+
             if populate_cache:
                 self._ctx.tree_cache.append(p)
+
+            # Attach matching .rd as child of this .md
+            if p.is_file() and ext in _MD_EXTS:
+                rd_path = rd_by_stem.get(p.stem.lower())
+                if rd_path is not None and rd_path not in paired_rd_paths:
+                    rd_icon = ICONS.get(".rd", "\u25b6")
+                    self._tree.insert(
+                        item_id, "end",
+                        text=f"  {rd_icon}  {rd_path.name}",
+                        values=[str(rd_path)],
+                    )
+                    paired_rd_paths.add(rd_path)
+                    if populate_cache:
+                        self._ctx.tree_cache.append(rd_path)
+                    self._tree.item(item_id, open=True)
 
     def _filter_tree(self) -> None:
         query = self._filter_var.get().lower()

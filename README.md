@@ -23,6 +23,7 @@ To ensure UI stability and prevent regressions, refer to the following documenta
 - **PDF Export**: High-fidelity PDF generation via headless Edge.
 - **Smart Explorer**: File system tree with live filtering and recent files history.
 - **Zen Mode**: Distraction-free reading (F11/Esc).
+- **⚡ RSVP Reader**: Companion `.rd` files render as a sentence-by-sentence speed reader (200–1200 WPM).
 - **🌍 Multi-Language Support**: English and Italian via CLI parameter.
 
 ## 📚 Documentation
@@ -80,6 +81,61 @@ The easiest way to launch the application is using the provided bash scripts:
 ### Help
 ```bash
 ./.venv/Scripts/python md_reader.py --help
+```
+
+## ⚡ RSVP Companion Files (`.rd`)
+
+Friedrich supports **`.rd` companion files** — short, hand-written summaries
+that play next to a Markdown document as a [RSVP](https://en.wikipedia.org/wiki/Rapid_serial_visual_presentation)-style
+sentence reader (one sentence at a time, configurable WPM).
+
+### File pairing
+
+Place a `.rd` file next to a `.md` with the **same base name**:
+
+```
+docs/
+  architecture.md
+  architecture.rd        ← companion summary
+  deployment.md          ← no companion
+  loose.rd               ← orphan, opens standalone
+```
+
+In the explorer, the `.rd` appears **nested under its `.md`**. Orphan `.rd`
+files (no matching `.md`) appear as top-level documents and open the same
+RSVP player.
+
+### `.rd` format
+
+One sentence per line. Empty lines are ignored. Inline Markdown is supported
+for emphasis only:
+
+```
+La lettura veloce è una disciplina, non un trucco.
+Si fonda su tre leve che agiscono insieme.
+
+L'occhio fa salti chiamati *saccadi*.
+Tra una saccade e l'altra c'è una breve **fissazione**.
+La velocità si misura in `WPM` (words per minute).
+```
+
+Block-level Markdown (headers, lists, code fences, images, tables) is
+stripped. The reader does **not** infer sentence boundaries — splitting is
+the author's responsibility, line by line.
+
+### Player
+
+Selecting a `.rd` in the tree opens it as a regular tab containing the RSVP
+player: ▶ Play / ⏸ Pause / ⏮ Prev / ⏭ Next / ⏹ Stop, plus a WPM slider
+(200–1200, default 300). Per-sentence duration is computed from the WPM
+setting and the sentence word count.
+
+### Standalone player
+
+You can also run the player on a single `.rd` outside the main viewer:
+
+```bash
+./.venv/Scripts/python rd_viewer.py path/to/file.rd --wpm 400
 ```
 
 ## 🌍 Localization

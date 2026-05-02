@@ -29,6 +29,7 @@ from widgets.empty_state import EmptyState
 from widgets.toolbar import Toolbar, ToolbarCommands
 from services.file_renderer import FileRenderer
 from services.pdf_exporter import export_pdf
+from services.rd_parser import parse_rd
 
 
 class MarkdownReader(tk.Tk):
@@ -315,7 +316,11 @@ class MarkdownReader(tk.Tk):
                 self._pending_fragment = None
 
                 is_pdf = tab.pdf_viewer is not None
-                if tab.rendered and tab.last_mtime == current_mtime and (not fragment or is_pdf):
+                is_rd = tab.rsvp_player is not None
+                if is_rd:
+                    tab.rendered = True
+                    tab.last_mtime = current_mtime
+                elif tab.rendered and tab.last_mtime == current_mtime and (not fragment or is_pdf):
                     pass  # DOM still in tab.html_frame / pdf_viewer; skip re-render
                 elif is_pdf:
                     self._renderer.load_file(tab.path, push_history=False)
@@ -372,8 +377,14 @@ class MarkdownReader(tk.Tk):
         self._sidebar.build_tree(self._ctx.scan_dir)
         self._sidebar.update_bookmarks_list()
         if self._ctx.current_file and self._ctx.current_file.exists():
-            self._renderer.load_file(self._ctx.current_file, push_history=False)
             tab = self._ctx.current_tab
+            if tab and tab.rsvp_player is not None:
+                try:
+                    tab.rsvp_player.load(parse_rd(tab.path))
+                except OSError:
+                    pass
+            else:
+                self._renderer.load_file(self._ctx.current_file, push_history=False)
             if tab:
                 try:
                     tab.last_mtime = tab.path.stat().st_mtime
@@ -389,6 +400,15 @@ class MarkdownReader(tk.Tk):
         tab = self._ctx.current_tab
         if not tab: return
         if tab.pdf_viewer is not None:
+            return
+        if tab.rsvp_player is not None:
+            try:
+                text = tab.path.read_text(encoding="utf-8")
+            except Exception:
+                return
+            self.clipboard_clear()
+            self.clipboard_append(text)
+            self._show_toast(self._ctx.i18n.t("toast.copied"))
             return
         try:
             text = tab.source_text.get("1.0", tk.END).rstrip("\n") if tab.view_mode == "source" else tab.path.read_text(encoding="utf-8")
@@ -415,6 +435,8 @@ class MarkdownReader(tk.Tk):
         tab = self._ctx.current_tab
         if not tab: return
         if tab.pdf_viewer is not None:
+            return
+        if tab.rsvp_player is not None:
             return
         if tab.view_mode == "preview":
             tab.view_mode = "source"

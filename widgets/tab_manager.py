@@ -9,6 +9,8 @@ from constants import FONT, FONT_MONO
 from app_context import TabInfo
 from widgets.search_bar import SearchBar
 from widgets.pdf_viewer import PdfViewer
+from widgets.rsvp_player import RsvpPlayer
+from services.rd_parser import parse_rd
 
 if TYPE_CHECKING:
     from app_context import AppContext
@@ -71,9 +73,17 @@ class TabManager:
     def add_tab(self, path: Path):
         tab = TabInfo(path=path)
         tab.container = tk.Frame(self.content_area, bg=self._ctx.colors["bg"])
-        is_pdf = path.suffix.lower() == ".pdf"
+        ext = path.suffix.lower()
+        is_pdf = ext == ".pdf"
+        is_rd = ext == ".rd"
         if is_pdf:
             tab.pdf_viewer = PdfViewer(tab.container, self._ctx)
+        elif is_rd:
+            tab.rsvp_player = RsvpPlayer(tab.container)
+            try:
+                tab.rsvp_player.load(parse_rd(path))
+            except OSError:
+                pass
         else:
             tab.html_frame = HtmlFrame(tab.container, messages_enabled=False,
                                        javascript_enabled=True,
@@ -87,7 +97,7 @@ class TabManager:
             selectforeground=self._ctx.colors["text_bright"])
         # Bind Ctrl+C to copy content from source view
         tab.source_text.bind("<Control-c>", lambda e: self._ctx.root._copy_content())
-        if not is_pdf:
+        if not is_pdf and not is_rd:
             tab.search_bar = SearchBar(tab.container, self._ctx, tab)
             tab.search_bar.frame.pack(side=tk.TOP, fill=tk.X)
 
@@ -109,6 +119,9 @@ class TabManager:
         if active_tab.pdf_viewer is not None:
             active_tab.source_text.pack_forget()
             active_tab.pdf_viewer.pack(fill=tk.BOTH, expand=True)
+        elif active_tab.rsvp_player is not None:
+            active_tab.source_text.pack_forget()
+            active_tab.rsvp_player.pack(fill=tk.BOTH, expand=True)
         elif active_tab.view_mode == "preview":
             active_tab.source_text.pack_forget()
             active_tab.html_frame.pack(fill=tk.BOTH, expand=True, after=active_tab.search_bar.frame)
