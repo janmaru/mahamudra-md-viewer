@@ -119,7 +119,14 @@ class SidePanel:
                                        open=True, values=[str(root_path)])
 
         try:
-            entries = sorted(root_path.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower()), reverse=self._sort_reverse)
+            def _sort_key(p: Path) -> tuple[bool, float]:
+                try:
+                    mtime = p.stat().st_mtime
+                except OSError:
+                    mtime = 0.0
+                return (not p.is_dir(), -mtime)
+
+            entries = sorted(root_path.iterdir(), key=_sort_key, reverse=self._sort_reverse)
         except PermissionError:
             return
 
