@@ -99,6 +99,7 @@
   "toast.sort_za": "Sorting: Z-A",
   "toast.coming_soon": "{feature} (Coming soon)",
   "toast.pdf_truncated": "Large PDF: showing first {count} pages",
+  "toast.rendering_in_progress": "Rendering diagrams, please wait...",
   "word.settings": "Settings",
   "word.help": "Help",
   

@@ -6,8 +6,6 @@ and embeds them as base64 images.
 
 import re
 import subprocess
-import tempfile
-import os
 import base64
 from pathlib import Path
 
@@ -94,28 +92,27 @@ def _render_plantuml_to_png_b64(code: str) -> str | None:
     if not java or not _PLANTUML_JAR.exists():
         return None
 
-    tmp_in = None
-    tmp_out = None
+    # -pipe: read source from stdin, write PNG to stdout. Avoids depending on the
+    # filename PlantUML would derive from `@startuml <name>`.
+    # -charset UTF-8: PlantUML defaults to windows-1252, mangling unicode arrows
+    # and box-drawing characters in source text.
+    cmd = [java, "-jar", str(_PLANTUML_JAR), "-charset", "UTF-8", "-tpng", "-pipe"]
+
     try:
-        with tempfile.NamedTemporaryFile(suffix=".puml", delete=False, mode="w", encoding="utf-8") as f:
-            f.write(code)
-            tmp_in = f.name
-        tmp_out = tmp_in.replace(".puml", ".png")
-
-        cmd = [java, "-jar", str(_PLANTUML_JAR), "-tpng", "-o", os.path.dirname(tmp_out), tmp_in]
-
-        subprocess.run(cmd, check=True, capture_output=True, timeout=30,
-                       creationflags=subprocess.CREATE_NO_WINDOW)
-
-        if os.path.exists(tmp_out):
-            with open(tmp_out, "rb") as img:
-                png_b64 = base64.b64encode(img.read()).decode("ascii")
-            cache_put(code, png_b64)
-            return png_b64
+        result = subprocess.run(
+            cmd,
+            input=code.encode("utf-8"),
+            capture_output=True,
+            timeout=30,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
     except Exception:
         return None
-    finally:
-        for f in (tmp_in, tmp_out):
-            if f and os.path.exists(f):
-                os.remove(f)
-    return None
+
+    png_bytes = result.stdout
+    if result.returncode != 0 or not png_bytes:
+        return None
+
+    png_b64 = base64.b64encode(png_bytes).decode("ascii")
+    cache_put(code, png_b64)
+    return png_b64

@@ -1,156 +1,223 @@
-# Friedrich - Document Reader
+Friedrich
+=========
 
-A modern, VS Code-inspired Markdown viewer with a three-panel layout, theme support, and integrated diagram rendering.
+A Windows Markdown viewer built on Tkinter. Renders Markdown with native
+diagram support (Mermaid, PlantUML), themed CSS, an on-disk diagram cache,
+PDF export through headless Edge, and an RSVP sentence reader for `.rd`
+companion files.
 
-## 🏗️ Architecture
 
-The project follows a modular 3-tier architecture:
-- **Presentation Layer**: `md_reader.py` (Tkinter UI and Event management).
-- **Service Layer**: `services/` (CSS loading, Diagram processing, Caching).
-- **Infrastructure**: System-level integration (Edge PDF, Java JRE, File System).
+Stack
+-----
 
-### 🎨 UI Design System
-To ensure UI stability and prevent regressions, refer to the following documentation:
-- [UI Structure Blueprint](ui/UI_STRUCTURE.md) - Hierarchy and layout rules.
-- [Design Tokens](ui/DESIGN_TOKENS.md) - Colors, typography, and spacing.
-- [Component Contracts](ui/COMPONENT_CONTRACTS.md) - Widget behaviors and dimensions.
+| Component        | Implementation                                              |
+|------------------|-------------------------------------------------------------|
+| Window / UI      | Tkinter (`tk`, `ttk`)                                       |
+| HTML rendering   | `tkinterweb.HtmlFrame`                                      |
+| Markdown parser  | `markdown` (extensions: `tables`, `fenced_code`, `sane_lists`) |
+| PlantUML         | bundled `scripts/plantuml.jar` invoked with `-pipe -charset UTF-8` |
+| Mermaid          | `mmdc` (Node) — optional, fallback to fenced code           |
+| PDF export       | `msedge.exe --headless --print-to-pdf`                      |
+| PDF preview      | `pypdfium2`                                                 |
+| Persistence      | `settings.json` (zoom, theme, recents, bookmarks)           |
+| Diagram cache    | SHA-256 keyed `.b64` files under `.diagram_cache/<doc_stem>/` |
 
-## 🚀 Key Features
 
-- **Themed UI**: Dark and Light modes for the application interface.
-- **Markdown Themes**: Multiple CSS styles (VS Code Dark, Industrial, French Revolution).
-- **Diagram Engines**: Native support for **Mermaid** and **PlantUML**.
-- **PDF Export**: High-fidelity PDF generation via headless Edge.
-- **Smart Explorer**: File system tree with live filtering and recent files history. Entries are sorted by modification date (newest first), with folders shown above files.
-- **Zen Mode**: Distraction-free reading (F11/Esc).
-- **⚡ RSVP Reader**: Companion `.rd` files render as a sentence-by-sentence speed reader (200–1200 WPM).
-- **🌍 Multi-Language Support**: English and Italian via CLI parameter.
+Architecture
+------------
 
-## 📚 Documentation
+Three layers:
 
-For more detailed information, see the `docs/` folder:
-- [Technical Analysis](docs/technical_analysis.md)
-- [Functional Analysis](docs/functional_analysis.md)
-- [Internationalization (i18n)](docs/i18n.md) - Language support guide
+*   **Presentation** — `md_reader.py` orchestrates the Tk root, key bindings,
+    and lifecycle. `widgets/` holds Toolbar, Sidebar, NavRail, TabManager,
+    SearchBar, EmptyState, DiagramViewer, CustomMenu.
+*   **Services** — `services/` contains `file_renderer`, `mermaid_processor`,
+    `plantuml_processor`, `diagram_cache`, `log_renderer`, `pdf_exporter`,
+    `css_loader`, `rd_parser`, `file_scanner`.
+*   **Domain & Application** — `domain/` (models and parsing services for
+    `.rd` files and log lines) and `application/use_cases/` (file refresh,
+    log rendering, markdown export).
 
-## 🛠️ Requirements
+Diagram pipeline:
 
-- **Python 3.10+**
-- **Java JRE** (for PlantUML diagrams)
-- **Node.js + mmdc** (optional, for Mermaid diagrams)
-- **Microsoft Edge** (for PDF Export)
+1.  Synchronous Markdown render replaces fenced `mermaid` and `plantuml`
+    blocks with HTML placeholders so the page paints immediately.
+2.  A daemon thread re-runs the parsers, renders each diagram block to PNG
+    bytes, and base64-encodes them.
+3.  Each diagram is keyed by `sha256(source)` and persisted at
+    `.diagram_cache/<doc_stem>/<hash>.b64`. Cache hits skip the render.
+4.  The worker schedules `root.after(0, ...)` to swap placeholders for the
+    final `<img>` tags on the UI thread.
 
-## 📦 Installation
+Refresh (`Ctrl+R`, menu) and Clear Cache are gated while a render is in
+flight: the menu entries appear disabled and the handlers early-return with
+a toast. The counter `AppContext.diagram_render_in_flight` is incremented
+before spawning the worker and decremented in a `try/finally` callback
+marshalled back to the UI thread, so the gate releases on success, error,
+or no-op.
 
-1. Create a virtual environment:
-   ```bash
-   python -m venv .venv
-   ```
+PlantUML reads UTF-8 from stdin (`-pipe`) and writes PNG to stdout.
+`-charset UTF-8` is required because the JAR defaults to `windows-1252`
+and would otherwise mangle Unicode arrows and box-drawing characters.
 
-2. Install dependencies:
-   ```bash
-   # On Windows (Git Bash or PowerShell)
-   ./.venv/Scripts/pip install -r requirements.txt
-   
-   # On Linux/macOS
-   source .venv/bin/activate
-   pip install -r requirements.txt
-   ```
 
-## 🚀 Usage
+Project Structure
+-----------------
 
-The easiest way to launch the application is using the provided bash scripts:
-
-```bash
-# Launch in Italian
-./launch_it.sh
-
-# Launch in English
-./launch_en.sh
+```
+md_viewer/
+├── md_reader.py              # Entry point, Tk root, key bindings
+├── rd_viewer.py              # Standalone RSVP player for .rd files
+├── app_context.py            # Shared state (TabInfo, AppContext)
+├── settings_manager.py       # settings.json load/save
+├── constants.py              # APP_DIR, fonts, version, paths
+├── requirements.txt
+├── VERSION
+├── launch_en.sh              # Launch with --lang en
+├── launch_it.sh              # Launch with --lang it
+├── md_viewer.spec            # PyInstaller spec
+├── application/
+│   └── use_cases/            # refresh_filesystem, render_log_file, export_markdown
+├── domain/
+│   ├── models/               # FileInfo, LogLine, TreeNode
+│   └── services/             # log_parser
+├── presentation/
+│   └── controllers/          # main_controller, tab_controller
+├── services/
+│   ├── file_renderer.py      # Markdown + diagrams orchestration
+│   ├── mermaid_processor.py  # mmdc → PNG (base64)
+│   ├── plantuml_processor.py # plantuml.jar -pipe → PNG (base64)
+│   ├── diagram_cache.py      # SHA-256 disk cache, per-doc subdirs
+│   ├── pdf_exporter.py       # Edge headless --print-to-pdf
+│   ├── log_renderer.py       # .log files
+│   ├── rd_parser.py          # .rd file parser
+│   ├── css_loader.py         # build_html with theme CSS
+│   └── file_scanner.py       # filesystem tree builder
+├── widgets/
+│   ├── toolbar.py            # Top bar, menus
+│   ├── sidebar.py            # File tree + bookmarks + recents
+│   ├── nav_rail.py           # Tab dock
+│   ├── tab_manager.py        # Multi-tab orchestration
+│   ├── custom_menu.py        # Themed popup menu
+│   ├── diagram_viewer.py     # Click-to-zoom diagram modal
+│   ├── search_bar.py         # In-page text search
+│   ├── empty_state.py        # Home screen
+│   ├── tooltip.py            # Generic tooltip
+│   └── listbox_tooltip.py    # Tooltip on Listbox rows
+├── i18n/                     # en.json, it.json
+├── styles/                   # Markdown CSS themes
+├── ui/                       # UI_STRUCTURE.md, DESIGN_TOKENS.md, COMPONENT_CONTRACTS.md
+├── docs/                     # technical_analysis.md, functional_analysis.md, i18n.md
+├── scripts/                  # plantuml.jar, mermaid.min.js
+├── assets/                   # Static resources
+├── errors/                   # Error views and templates
+└── tests/                    # Test scratch
 ```
 
-### Manual Usage
+
+Quick Start
+-----------
+
+Requires Python 3.10+, Java JRE (for PlantUML), Microsoft Edge (for PDF
+export). Node.js with `mmdc` is optional and only needed if Mermaid blocks
+are present.
+
 ```bash
-# English
+python -m venv .venv
+./.venv/Scripts/pip install -r requirements.txt
+
+# Launch
+./launch_en.sh           # English
+./launch_it.sh           # Italian
+
+# Manual
 ./.venv/Scripts/python md_reader.py --lang en
-
-# Italian
-./.venv/Scripts/python md_reader.py --lang it
-```
-
-### Help
-```bash
 ./.venv/Scripts/python md_reader.py --help
 ```
 
-## ⚡ RSVP Companion Files (`.rd`)
 
-Friedrich supports **`.rd` companion files** — short, hand-written summaries
-that play next to a Markdown document as a [RSVP](https://en.wikipedia.org/wiki/Rapid_serial_visual_presentation)-style
-sentence reader (one sentence at a time, configurable WPM).
+Diagram Engines
+---------------
 
-### File pairing
-
-Place a `.rd` file next to a `.md` with the **same base name**:
+**PlantUML** is bundled (`scripts/plantuml.jar`). The renderer locates `java`
+via `shutil.which("java")` and invokes:
 
 ```
-docs/
-  architecture.md
-  architecture.rd        ← companion summary
-  deployment.md          ← no companion
-  loose.rd               ← orphan, opens standalone
+java -jar plantuml.jar -charset UTF-8 -tpng -pipe < <source> > <png>
 ```
 
-In the explorer, the `.rd` appears **nested under its `.md`**. Orphan `.rd`
-files (no matching `.md`) appear as top-level documents and open the same
-RSVP player.
+The `-pipe` flag avoids any dependency on the filename PlantUML would
+otherwise derive from `@startuml <name>`.
 
-### `.rd` format
+**Mermaid** uses the external `mmdc` CLI when available. Each block is
+written to a temp file and rendered to PNG; the base64 is embedded in the
+HTML. If `mmdc` is missing, blocks fall back to a fenced code block.
 
-One sentence per line. Empty lines are ignored. Inline Markdown is supported
-for emphasis only:
+Both engines share the same disk cache under `.diagram_cache/<doc_stem>/`.
+Entries are `<sha256>.b64` files containing the base64 PNG payload. The
+cache is invalidated for the current document on Refresh, and globally on
+Clear Cache (menu Tools).
 
-```
-La lettura veloce è una disciplina, non un trucco.
-Si fonda su tre leve che agiscono insieme.
 
-L'occhio fa salti chiamati *saccadi*.
-Tra una saccade e l'altra c'è una breve **fissazione**.
-La velocità si misura in `WPM` (words per minute).
-```
+RSVP Companion (`.rd`)
+----------------------
 
-Block-level Markdown (headers, lists, code fences, images, tables) is
-stripped. The reader does **not** infer sentence boundaries — splitting is
-the author's responsibility, line by line.
+A `.rd` file placed next to a `.md` with the same base name appears nested
+under it in the explorer and opens an RSVP (Rapid Serial Visual
+Presentation) player tab. Orphan `.rd` files (no matching `.md`) appear as
+top-level entries.
 
-### Player
+Format: one sentence per line, blank lines ignored. Inline Markdown is
+preserved for emphasis (`*italic*`, `**bold**`, `` `code` ``). Block-level
+Markdown (headers, lists, fences, images, tables) is stripped. Sentence
+splitting is the author's responsibility — the player reads lines verbatim.
 
-Selecting a `.rd` in the tree opens it as a regular tab containing the RSVP
-player: ▶ Play / ⏸ Pause / ⏮ Prev / ⏭ Next / ⏹ Stop, plus a WPM slider
-(200–1200, default 300). Per-sentence duration is computed from the WPM
-setting and the sentence word count.
+Player controls: Play, Pause, Prev, Next, Stop, plus a WPM slider
+(200–1200, default 300). Per-sentence duration is computed from WPM and
+word count.
 
-### Standalone player
-
-You can also run the player on a single `.rd` outside the main viewer:
+Standalone player:
 
 ```bash
 ./.venv/Scripts/python rd_viewer.py path/to/file.rd --wpm 400
 ```
 
-## 🌍 Localization
 
-The application supports multiple languages via command-line parameters:
+PDF Export
+----------
 
-- **en** - English (default)
-- **it** - Italiano (Italian)
+`Tools → Export PDF` writes the current Markdown rendering to PDF via Edge
+in headless mode. The exporter probes the standard Edge install paths
+(`%ProgramFiles%`, `%ProgramFiles(x86)%`, `%LocalAppData%`) before falling
+back to `msedge` on `PATH`. The output mirrors the preview, including
+diagrams already rendered to PNG.
 
-See [i18n Documentation](docs/i18n.md) for detailed information about:
-- Adding new languages
-- Translating UI strings
-- Using translations in code
 
-## 📄 Credits
+Localization
+------------
 
-- App icon: portrait from the **Augustale of Frederick II** ("Friedrich" in German — hence the app name).
-- Developed by [janmaru](https://janmaru.github.io).
+```bash
+md_reader.py --lang en        # English (default)
+md_reader.py --lang it        # Italian
+```
+
+Strings live in `i18n/<lang>.json`. See `docs/i18n.md` for the key
+convention and instructions for adding a locale.
+
+
+Documentation
+-------------
+
+*   `docs/technical_analysis.md` — architecture, services, data flow.
+*   `docs/functional_analysis.md` — features, user flows, requirements.
+*   `docs/i18n.md` — internationalization guide.
+*   `ui/UI_STRUCTURE.md` — widget hierarchy and layout rules.
+*   `ui/DESIGN_TOKENS.md` — colors, typography, spacing.
+*   `ui/COMPONENT_CONTRACTS.md` — widget behaviors and dimensions.
+
+
+Credits
+-------
+
+App icon: portrait from the Augustale of Frederick II (Italian *Federico*,
+German *Friedrich* — hence the name). Author: [janmaru](https://janmaru.github.io).

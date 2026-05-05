@@ -100,9 +100,9 @@ class Toolbar:
         items = [
             (f"{i18n.t('menu.open_file')}      Ctrl+O", self._cmd.open_file),
             (i18n.t('menu.open_folder'), self._cmd.change_folder),
-            ("---", None),
+            "---",
             (i18n.t('menu.export_pdf'), self._cmd.export_pdf),
-            ("---", None),
+            "---",
             (i18n.t('menu.exit'), self._cmd.quit)
         ]
         self._popup_menu(event, items)
@@ -114,13 +114,13 @@ class Toolbar:
             (f"{i18n.t('menu.toggle_sidebar')}    Ctrl+B", cmd.toggle_sidebar),
             (i18n.t('menu.toggle_status_bar'), cmd.toggle_status_bar),
             (f"{i18n.t('menu.toggle_zen')}   F11", cmd.toggle_zen),
-            ("---", None),
+            "---",
             (f"{i18n.t('menu.zoom_in')}           Ctrl++", cmd.zoom_in),
             (f"{i18n.t('menu.zoom_out')}          Ctrl+-", cmd.zoom_out),
             (f"{i18n.t('menu.reset_zoom')}        Ctrl+0", cmd.reset_zoom),
-            ("---", None),
+            "---",
             (f"{i18n.t('menu.toggle_ui_theme')}   (Light/Dark)", cmd.toggle_ui_theme),
-            ("---", None)
+            "---"
         ]
         for name in self._ctx.theme_names:
             items.append((f"MD: {name}", lambda n=name: cmd.set_markdown_theme(n)))
@@ -128,12 +128,15 @@ class Toolbar:
 
     def _show_tools_menu(self, event):
         i18n = self._ctx.i18n
+        rendering = self._ctx.diagram_render_in_flight > 0
+        refresh_cmd = None if rendering else self._cmd.refresh_all
+        clear_cmd = None if rendering else self._cmd.clear_diagram_cache
         items = [
-            (f"{i18n.t('menu.refresh')}       Ctrl+R", self._cmd.refresh_all),
+            (f"{i18n.t('menu.refresh')}       Ctrl+R", refresh_cmd),
             (f"{i18n.t('menu.copy_content')}     Ctrl+C", self._cmd.copy_content),
-            ("---", None),
-            (i18n.t('menu.clear_cache'), self._cmd.clear_diagram_cache),
-            ("---", None),
+            "---",
+            (i18n.t('menu.clear_cache'), clear_cmd),
+            "---",
             (i18n.t('menu.about'), self.show_about)
         ]
         self._popup_menu(event, items)

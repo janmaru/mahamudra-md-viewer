@@ -30,6 +30,7 @@ from widgets.toolbar import Toolbar, ToolbarCommands
 from services.file_renderer import FileRenderer
 from services.pdf_exporter import export_pdf
 from services.rd_parser import parse_rd
+from services.diagram_cache import clear as clear_diagram_cache
 
 
 class MarkdownReader(tk.Tk):
@@ -373,10 +374,14 @@ class MarkdownReader(tk.Tk):
         self._tab_manager.add_tab(path)
 
     def _refresh_all(self):
+        if self._ctx.diagram_render_in_flight > 0:
+            self._show_toast(self._ctx.i18n.t("toast.rendering_in_progress"))
+            return
         self._ctx.tree_cache.clear()
         self._sidebar.build_tree(self._ctx.scan_dir)
         self._sidebar.update_bookmarks_list()
         if self._ctx.current_file and self._ctx.current_file.exists():
+            clear_diagram_cache(self._ctx.current_file.stem)
             tab = self._ctx.current_tab
             if tab and tab.rsvp_player is not None:
                 try:
@@ -516,6 +521,9 @@ class MarkdownReader(tk.Tk):
         self._save_settings()
 
     def _clear_diagram_cache(self):
+        if self._ctx.diagram_render_in_flight > 0:
+            self._show_toast(self._ctx.i18n.t("toast.rendering_in_progress"))
+            return
         from services.diagram_cache import clear; clear(); self._show_toast(self._ctx.i18n.t("success.cache_cleared"), bg="#f39c12")
         self.after(500, self._refresh_all)
 

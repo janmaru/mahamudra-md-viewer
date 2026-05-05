@@ -51,6 +51,7 @@ class AppContext:
     theme_index: int = 0
     css_path: Optional[Path] = None
     diagram_registry: dict[str, str] = field(default_factory=dict)
+    diagram_render_in_flight: int = 0
     
     zen_mode: bool = False
     left_visible: bool = True

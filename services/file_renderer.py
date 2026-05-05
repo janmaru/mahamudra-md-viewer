@@ -175,28 +175,36 @@ class FileRenderer:
     def _render_diagrams_async(self, content: str) -> None:
         ctx = self._ctx
         registry = {}
+        ctx.diagram_render_in_flight += 1
 
         def _worker():
-            processed_content, mermaid_blocks = mermaid_processor.process_mermaid_blocks(content)
-            processed_content, plantuml_blocks = plantuml_processor.process_plantuml_blocks(processed_content)
-            if not mermaid_blocks and not plantuml_blocks:
-                return
-            html_body = markdown.markdown(processed_content, extensions=["tables", "fenced_code", "sane_lists"])
-            if mermaid_blocks:
-                html_body = mermaid_processor.inject_mermaid_svgs(
-                    html_body, mermaid_blocks, registry)
-            if plantuml_blocks:
-                html_body = plantuml_processor.inject_plantuml_images(
-                    html_body, plantuml_blocks, registry)
-            html_body = html_body.replace("<table>", '<div class="table-container"><table>')
-            html_body = html_body.replace("</table>", "</table></div>")
-            ctx.root.after(0, lambda: self._on_diagrams_ready(html_body, registry))
+            try:
+                processed_content, mermaid_blocks = mermaid_processor.process_mermaid_blocks(content)
+                processed_content, plantuml_blocks = plantuml_processor.process_plantuml_blocks(processed_content)
+                if not mermaid_blocks and not plantuml_blocks:
+                    return
+                html_body = markdown.markdown(processed_content, extensions=["tables", "fenced_code", "sane_lists"])
+                if mermaid_blocks:
+                    html_body = mermaid_processor.inject_mermaid_svgs(
+                        html_body, mermaid_blocks, registry)
+                if plantuml_blocks:
+                    html_body = plantuml_processor.inject_plantuml_images(
+                        html_body, plantuml_blocks, registry)
+                html_body = html_body.replace("<table>", '<div class="table-container"><table>')
+                html_body = html_body.replace("</table>", "</table></div>")
+                ctx.root.after(0, lambda: self._on_diagrams_ready(html_body, registry))
+            finally:
+                ctx.root.after(0, self._on_diagrams_done)
 
         threading.Thread(target=_worker, daemon=True).start()
 
     def _on_diagrams_ready(self, html_body: str, registry: dict) -> None:
         self._ctx.diagram_registry.update(registry)
         self.update_html(html_body)
+
+    def _on_diagrams_done(self) -> None:
+        if self._ctx.diagram_render_in_flight > 0:
+            self._ctx.diagram_render_in_flight -= 1
 
     def _render_csv(self, content: str) -> str:
         reader = csv.reader(content.splitlines())

@@ -24,13 +24,17 @@ class CustomMenu(tk.Toplevel):
                 continue
 
             label_text, command = item
+            disabled = command is None
+            fg = colors["border"] if disabled else colors["text"]
+            cursor = "" if disabled else "hand2"
             lbl = tk.Label(container, text=f"  {label_text}  ", bg=colors["toolbar"],
-                           fg=colors["text"], font=(FONT, 10), anchor=tk.W, padx=15, pady=6, cursor="hand2")
+                           fg=fg, font=(FONT, 10), anchor=tk.W, padx=15, pady=6, cursor=cursor)
             lbl.pack(fill=tk.X)
 
-            lbl.bind("<Button-1>", lambda e, cmd=command: self._execute(cmd))
-            lbl.bind("<Enter>", lambda e, l=lbl: l.config(bg=colors["list_active"], fg=colors["text_bright"]))
-            lbl.bind("<Leave>", lambda e, l=lbl: l.config(bg=colors["toolbar"], fg=colors["text"]))
+            if not disabled:
+                lbl.bind("<Button-1>", lambda e, cmd=command: self._execute(cmd))
+                lbl.bind("<Enter>", lambda e, l=lbl: l.config(bg=colors["list_active"], fg=colors["text_bright"]))
+                lbl.bind("<Leave>", lambda e, l=lbl: l.config(bg=colors["toolbar"], fg=colors["text"]))
 
         self.bind("<FocusOut>", lambda e: self.destroy())
         self.after(10, self.focus_set)
