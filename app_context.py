@@ -26,6 +26,7 @@ class TabInfo:
     pdf_viewer: Optional[tk.Widget] = None
     rsvp_player: Optional[tk.Widget] = None
     source_text: Optional[tk.Text] = None
+    source_frame: Optional[tk.Frame] = None
     search_bar: Optional[SearchBar] = None
 
 

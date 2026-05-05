@@ -55,8 +55,13 @@ class SidePanel:
             relief=tk.FLAT)
         filter_entry.pack(fill=tk.X, padx=8, pady=4, ipady=3)
 
-        self._tree = ttk.Treeview(self._explorer_frame, show="tree", selectmode="browse")
-        self._tree.pack(fill=tk.BOTH, expand=True)
+        tree_container = tk.Frame(self._explorer_frame, bg=colors["sidebar"])
+        tree_container.pack(fill=tk.BOTH, expand=True)
+        self._tree = ttk.Treeview(tree_container, show="tree", selectmode="browse")
+        tree_scroll = ttk.Scrollbar(tree_container, orient=tk.VERTICAL, command=self._tree.yview)
+        self._tree.configure(yscrollcommand=tree_scroll.set)
+        tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self._tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self._tree.tag_configure("disabled", foreground=colors["secondary"])
         self._tree.bind("<<TreeviewSelect>>", self._on_tree_select)
 

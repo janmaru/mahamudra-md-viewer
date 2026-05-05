@@ -289,7 +289,7 @@ class MarkdownReader(tk.Tk):
         # 3. Sidebar
         self._sidebar = SidePanel(self.main_paned, self._ctx)
         self.sidebar_panel = self._sidebar.panel
-        self._ctx.update_recent_list = self._sidebar.update_bookmarks_list
+        self._ctx.update_recent_list = self._sidebar.update_recent_files
         self.main_paned.add(self.sidebar_panel, weight=0)
 
         # 4. Workspace Container
@@ -446,7 +446,7 @@ class MarkdownReader(tk.Tk):
         if tab.view_mode == "preview":
             tab.view_mode = "source"
             tab.html_frame.pack_forget()
-            tab.source_text.pack(fill=tk.BOTH, expand=True, after=tab.search_bar.frame)
+            tab.source_frame.pack(fill=tk.BOTH, expand=True, after=tab.search_bar.frame)
             ext = tab.path.suffix.lower()
             tab.source_text.delete("1.0", tk.END)
             try:
@@ -457,7 +457,7 @@ class MarkdownReader(tk.Tk):
                     tab.source_text.insert("1.0", "# " + tab.path.stem)
         else:
             tab.view_mode = "preview"
-            tab.source_text.pack_forget()
+            tab.source_frame.pack_forget()
             tab.html_frame.pack(fill=tk.BOTH, expand=True, after=tab.search_bar.frame)
             if tab.path.exists():
                 self._renderer.load_file(tab.path, push_history=False)

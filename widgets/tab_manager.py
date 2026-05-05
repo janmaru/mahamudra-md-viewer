@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tkinter as tk
+from tkinter import ttk
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 from tkinterweb import HtmlFrame
@@ -88,13 +89,18 @@ class TabManager:
             tab.html_frame = HtmlFrame(tab.container, messages_enabled=False,
                                        javascript_enabled=True,
                                        on_link_click=self._ctx.root._on_link_click)
+        tab.source_frame = tk.Frame(tab.container, bg=self._ctx.colors["bg"])
         tab.source_text = tk.Text(
-            tab.container, bg=self._ctx.colors["bg"],
+            tab.source_frame, bg=self._ctx.colors["bg"],
             fg=self._ctx.colors["text_bright"],
             insertbackground=self._ctx.colors["text"], borderwidth=0,
             padx=20, pady=20, font=(FONT_MONO, 11),
             selectbackground=self._ctx.colors["selection"],
             selectforeground=self._ctx.colors["text_bright"])
+        source_scroll = ttk.Scrollbar(tab.source_frame, orient=tk.VERTICAL, command=tab.source_text.yview)
+        tab.source_text.configure(yscrollcommand=source_scroll.set)
+        source_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        tab.source_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         # Bind Ctrl+C to copy content from source view
         tab.source_text.bind("<Control-c>", lambda e: self._ctx.root._copy_content())
         if not is_pdf and not is_rd:
@@ -117,17 +123,17 @@ class TabManager:
 
         active_tab.container.pack(fill=tk.BOTH, expand=True)
         if active_tab.pdf_viewer is not None:
-            active_tab.source_text.pack_forget()
+            active_tab.source_frame.pack_forget()
             active_tab.pdf_viewer.pack(fill=tk.BOTH, expand=True)
         elif active_tab.rsvp_player is not None:
-            active_tab.source_text.pack_forget()
+            active_tab.source_frame.pack_forget()
             active_tab.rsvp_player.pack(fill=tk.BOTH, expand=True)
         elif active_tab.view_mode == "preview":
-            active_tab.source_text.pack_forget()
+            active_tab.source_frame.pack_forget()
             active_tab.html_frame.pack(fill=tk.BOTH, expand=True, after=active_tab.search_bar.frame)
         else:
             active_tab.html_frame.pack_forget()
-            active_tab.source_text.pack(fill=tk.BOTH, expand=True, after=active_tab.search_bar.frame)
+            active_tab.source_frame.pack(fill=tk.BOTH, expand=True, after=active_tab.search_bar.frame)
 
         self.refresh_tabs()
         self.update_breadcrumbs(active_tab.path)

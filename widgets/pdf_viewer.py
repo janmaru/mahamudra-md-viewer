@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import traceback
 import tkinter as tk
+from tkinter import ttk
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
@@ -32,7 +33,7 @@ class PdfViewer(tk.Frame):
         self._canvas = tk.Canvas(
             self, bg=ctx.colors["bg"], highlightthickness=0, takefocus=1
         )
-        self._scrollbar = tk.Scrollbar(
+        self._scrollbar = ttk.Scrollbar(
             self, orient=tk.VERTICAL, command=self._canvas.yview
         )
         self._canvas.configure(yscrollcommand=self._scrollbar.set)
