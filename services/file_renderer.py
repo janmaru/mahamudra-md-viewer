@@ -21,7 +21,7 @@ from services.log_renderer import render_log
 if TYPE_CHECKING:
     from app_context import AppContext
 
-IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp")
+IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg")
 CODE_EXTS = (".py", ".js", ".ts", ".json", ".yaml", ".yml", ".txt")
 
 
@@ -37,7 +37,7 @@ class FileRenderer:
                        ("Text files", "*.txt"),
                        ("Code files", "*.py *.js *.ts *.json *.yaml *.yml"),
                        ("CSV files", "*.csv"),
-                       ("Image files", "*.jpg *.jpeg *.png *.gif *.bmp *.webp"),
+                       ("Image files", "*.jpg *.jpeg *.png *.gif *.bmp *.webp *.svg"),
                        ("All files", "*.*")]
         )
         if path:

@@ -27,7 +27,7 @@ from widgets.nav_rail import NavRail
 from widgets.tab_manager import TabManager
 from widgets.empty_state import EmptyState
 from widgets.toolbar import Toolbar, ToolbarCommands
-from services.file_renderer import FileRenderer
+from services.file_renderer import FileRenderer, IMAGE_EXTS
 from services.pdf_exporter import export_pdf
 from services.rd_parser import parse_rd
 from services.diagram_cache import clear as clear_diagram_cache
@@ -450,7 +450,7 @@ class MarkdownReader(tk.Tk):
             ext = tab.path.suffix.lower()
             tab.source_text.delete("1.0", tk.END)
             try:
-                content = f"File: {tab.path}\nSize: {tab.path.stat().st_size:,} bytes" if ext in (".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp") else tab.path.read_text(encoding="utf-8")
+                content = f"File: {tab.path}\nSize: {tab.path.stat().st_size:,} bytes" if ext in IMAGE_EXTS else tab.path.read_text(encoding="utf-8")
                 tab.source_text.insert("1.0", content)
             except Exception:
                 if not tab.path.exists():
