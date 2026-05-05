@@ -15,6 +15,7 @@ from constants import FONT_MONO
 from services.css_loader import build_html
 import services.mermaid_processor as mermaid_processor
 import services.plantuml_processor as plantuml_processor
+import services.svg_processor as svg_processor
 from services.diagram_cache import set_document as set_cache_document
 from services.log_renderer import render_log
 
@@ -151,6 +152,7 @@ class FileRenderer:
 
         processed_content, mermaid_blocks = mermaid_processor.process_mermaid_blocks(content)
         processed_content, plantuml_blocks = plantuml_processor.process_plantuml_blocks(processed_content)
+        processed_content, svg_blocks = svg_processor.process_svg_blocks(processed_content)
 
         html_body = markdown.markdown(processed_content, extensions=["tables", "fenced_code", "sane_lists"])
 
@@ -165,6 +167,12 @@ class FileRenderer:
         elif plantuml_blocks:
             html_body = plantuml_processor.inject_plantuml_images(
                 html_body, plantuml_blocks, ctx.diagram_registry)
+
+        if svg_blocks and async_mermaid:
+            html_body = svg_processor.inject_svg_placeholders(html_body, svg_blocks)
+        elif svg_blocks:
+            html_body = svg_processor.inject_svg_images(
+                html_body, svg_blocks, ctx.diagram_registry)
 
         html_body = html_body.replace("<table>", '<div class="table-container"><table>')
         html_body = html_body.replace("</table>", "</table></div>")
@@ -181,7 +189,8 @@ class FileRenderer:
             try:
                 processed_content, mermaid_blocks = mermaid_processor.process_mermaid_blocks(content)
                 processed_content, plantuml_blocks = plantuml_processor.process_plantuml_blocks(processed_content)
-                if not mermaid_blocks and not plantuml_blocks:
+                processed_content, svg_blocks = svg_processor.process_svg_blocks(processed_content)
+                if not mermaid_blocks and not plantuml_blocks and not svg_blocks:
                     return
                 html_body = markdown.markdown(processed_content, extensions=["tables", "fenced_code", "sane_lists"])
                 if mermaid_blocks:
@@ -190,6 +199,9 @@ class FileRenderer:
                 if plantuml_blocks:
                     html_body = plantuml_processor.inject_plantuml_images(
                         html_body, plantuml_blocks, registry)
+                if svg_blocks:
+                    html_body = svg_processor.inject_svg_images(
+                        html_body, svg_blocks, registry)
                 html_body = html_body.replace("<table>", '<div class="table-container"><table>')
                 html_body = html_body.replace("</table>", "</table></div>")
                 ctx.root.after(0, lambda: self._on_diagrams_ready(html_body, registry))
