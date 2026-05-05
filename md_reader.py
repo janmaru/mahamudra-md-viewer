@@ -239,7 +239,7 @@ class MarkdownReader(tk.Tk):
         style.configure("TPanedwindow", background=self.colors["sidebar"])
         style.configure("TFrame", background=self.colors["sidebar"])
         style.configure("TLabel", background=self.colors["sidebar"], foreground=self.colors["text"])
-        style.configure("Sash", sashthickness=1, background=self.colors["sidebar"])
+        style.configure("Sash", sashthickness=5, background=self.colors["border"])
 
     def _build_toolbar(self):
         commands = ToolbarCommands(
