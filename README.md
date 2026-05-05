@@ -201,19 +201,19 @@ md_reader.py --lang en        # English (default)
 md_reader.py --lang it        # Italian
 ```
 
-Strings live in `i18n/<lang>.json`. See `docs/i18n.md` for the key
-convention and instructions for adding a locale.
+Strings live in `i18n/<lang>.json`. See [i18n guide](docs/i18n.md) for the
+key convention and instructions for adding a locale.
 
 
 Documentation
 -------------
 
-*   `docs/technical_analysis.md` — architecture, services, data flow.
-*   `docs/functional_analysis.md` — features, user flows, requirements.
-*   `docs/i18n.md` — internationalization guide.
-*   `ui/UI_STRUCTURE.md` — widget hierarchy and layout rules.
-*   `ui/DESIGN_TOKENS.md` — colors, typography, spacing.
-*   `ui/COMPONENT_CONTRACTS.md` — widget behaviors and dimensions.
+*   [Technical Analysis](docs/technical_analysis.md) — architecture, services, data flow.
+*   [Functional Analysis](docs/functional_analysis.md) — features, user flows, requirements.
+*   [Internationalization](docs/i18n.md) — locale files and translation workflow.
+*   [UI Structure](ui/UI_STRUCTURE.md) — widget hierarchy and layout rules.
+*   [Design Tokens](ui/DESIGN_TOKENS.md) — colors, typography, spacing.
+*   [Component Contracts](ui/COMPONENT_CONTRACTS.md) — widget behaviors and dimensions.
 
 
 Credits
