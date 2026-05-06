@@ -2,7 +2,7 @@
 Hash-based disk cache for rendered diagrams.
 Stores base64-encoded PNGs keyed by SHA-256 of the source code,
 organized in subdirectories by source document name.
-Shared by mermaid_processor and plantuml_processor.
+Shared by the diagram renderers.
 """
 
 import hashlib

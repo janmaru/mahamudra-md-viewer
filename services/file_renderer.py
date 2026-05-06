@@ -14,7 +14,6 @@ import markdown
 from constants import FONT_MONO
 from services.css_loader import build_html
 import services.mermaid_processor as mermaid_processor
-import services.plantuml_processor as plantuml_processor
 import services.svg_processor as svg_processor
 from services.diagram_cache import set_document as set_cache_document
 from services.log_renderer import render_log
@@ -151,7 +150,6 @@ class FileRenderer:
         ctx.diagram_registry.clear()
 
         processed_content, mermaid_blocks = mermaid_processor.process_mermaid_blocks(content)
-        processed_content, plantuml_blocks = plantuml_processor.process_plantuml_blocks(processed_content)
         processed_content, svg_blocks = svg_processor.process_svg_blocks(processed_content)
 
         html_body = markdown.markdown(processed_content, extensions=["tables", "fenced_code", "sane_lists"])
@@ -161,12 +159,6 @@ class FileRenderer:
         elif mermaid_blocks:
             html_body = mermaid_processor.inject_mermaid_svgs(
                 html_body, mermaid_blocks, ctx.diagram_registry)
-
-        if plantuml_blocks and async_mermaid:
-            html_body = plantuml_processor.inject_plantuml_placeholders(html_body, plantuml_blocks)
-        elif plantuml_blocks:
-            html_body = plantuml_processor.inject_plantuml_images(
-                html_body, plantuml_blocks, ctx.diagram_registry)
 
         if svg_blocks and async_mermaid:
             html_body = svg_processor.inject_svg_placeholders(html_body, svg_blocks)
@@ -188,17 +180,13 @@ class FileRenderer:
         def _worker():
             try:
                 processed_content, mermaid_blocks = mermaid_processor.process_mermaid_blocks(content)
-                processed_content, plantuml_blocks = plantuml_processor.process_plantuml_blocks(processed_content)
                 processed_content, svg_blocks = svg_processor.process_svg_blocks(processed_content)
-                if not mermaid_blocks and not plantuml_blocks and not svg_blocks:
+                if not mermaid_blocks and not svg_blocks:
                     return
                 html_body = markdown.markdown(processed_content, extensions=["tables", "fenced_code", "sane_lists"])
                 if mermaid_blocks:
                     html_body = mermaid_processor.inject_mermaid_svgs(
                         html_body, mermaid_blocks, registry)
-                if plantuml_blocks:
-                    html_body = plantuml_processor.inject_plantuml_images(
-                        html_body, plantuml_blocks, registry)
                 if svg_blocks:
                     html_body = svg_processor.inject_svg_images(
                         html_body, svg_blocks, registry)

@@ -12,7 +12,6 @@ a = Analysis(
     binaries=[],
     datas=[
         ("scripts/mermaid.min.js", "scripts"),
-        ("scripts/plantuml.jar", "scripts"),
         ("styles/*.css", "styles"),
         ("VERSION", "."),
     ],
@@ -24,7 +23,6 @@ a = Analysis(
         "services.file_scanner",
         "services.mermaid_processor",
         "services.pdf_exporter",
-        "services.plantuml_processor",
         "services.log_renderer",
         "widgets",
         "widgets.custom_menu",

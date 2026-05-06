@@ -2,7 +2,7 @@ Friedrich
 =========
 
 A Windows Markdown viewer built on Tkinter. Renders Markdown with native
-diagram support (Mermaid, PlantUML), themed CSS, an on-disk diagram cache,
+diagram support (Mermaid, inline SVG), themed CSS, an on-disk diagram cache,
 PDF export through headless Edge, and an RSVP sentence reader for `.rd`
 companion files.
 
@@ -15,8 +15,8 @@ Stack
 | Window / UI      | Tkinter (`tk`, `ttk`)                                       |
 | HTML rendering   | `tkinterweb.HtmlFrame`                                      |
 | Markdown parser  | `markdown` (extensions: `tables`, `fenced_code`, `sane_lists`) |
-| PlantUML         | bundled `scripts/plantuml.jar` invoked with `-pipe -charset UTF-8` |
 | Mermaid          | `mmdc` (Node) — optional, fallback to fenced code           |
+| Inline SVG       | `resvg-py` rasterized to PNG for `tkinterweb` compatibility |
 | PDF export       | `msedge.exe --headless --print-to-pdf`                      |
 | PDF preview      | `pypdfium2`                                                 |
 | Persistence      | `settings.json` (zoom, theme, recents, bookmarks)           |
@@ -32,7 +32,7 @@ Three layers:
     and lifecycle. `widgets/` holds Toolbar, Sidebar, NavRail, TabManager,
     SearchBar, EmptyState, DiagramViewer, CustomMenu.
 *   **Services** — `services/` contains `file_renderer`, `mermaid_processor`,
-    `plantuml_processor`, `diagram_cache`, `log_renderer`, `pdf_exporter`,
+    `svg_processor`, `diagram_cache`, `log_renderer`, `pdf_exporter`,
     `css_loader`, `rd_parser`, `file_scanner`.
 *   **Domain & Application** — `domain/` (models and parsing services for
     `.rd` files and log lines) and `application/use_cases/` (file refresh,
@@ -40,8 +40,8 @@ Three layers:
 
 Diagram pipeline:
 
-1.  Synchronous Markdown render replaces fenced `mermaid` and `plantuml`
-    blocks with HTML placeholders so the page paints immediately.
+1.  Synchronous Markdown render replaces Mermaid blocks and inline SVG blocks
+    with HTML placeholders so the page paints immediately.
 2.  A daemon thread re-runs the parsers, renders each diagram block to PNG
     bytes, and base64-encodes them.
 3.  Each diagram is keyed by `sha256(source)` and persisted at
@@ -55,11 +55,6 @@ a toast. The counter `AppContext.diagram_render_in_flight` is incremented
 before spawning the worker and decremented in a `try/finally` callback
 marshalled back to the UI thread, so the gate releases on success, error,
 or no-op.
-
-PlantUML reads UTF-8 from stdin (`-pipe`) and writes PNG to stdout.
-`-charset UTF-8` is required because the JAR defaults to `windows-1252`
-and would otherwise mangle Unicode arrows and box-drawing characters.
-
 
 Project Structure
 -----------------
@@ -86,7 +81,7 @@ md_viewer/
 ├── services/
 │   ├── file_renderer.py      # Markdown + diagrams orchestration
 │   ├── mermaid_processor.py  # mmdc → PNG (base64)
-│   ├── plantuml_processor.py # plantuml.jar -pipe → PNG (base64)
+│   ├── svg_processor.py      # inline SVG → PNG (base64)
 │   ├── diagram_cache.py      # SHA-256 disk cache, per-doc subdirs
 │   ├── pdf_exporter.py       # Edge headless --print-to-pdf
 │   ├── log_renderer.py       # .log files
@@ -108,7 +103,7 @@ md_viewer/
 ├── styles/                   # Markdown CSS themes
 ├── ui/                       # UI_STRUCTURE.md, DESIGN_TOKENS.md, COMPONENT_CONTRACTS.md
 ├── docs/                     # technical_analysis.md, functional_analysis.md, i18n.md
-├── scripts/                  # plantuml.jar, mermaid.min.js
+├── scripts/                  # mermaid.min.js
 ├── assets/                   # Static resources
 ├── errors/                   # Error views and templates
 └── tests/                    # Test scratch
@@ -118,9 +113,8 @@ md_viewer/
 Quick Start
 -----------
 
-Requires Python 3.10+, Java JRE (for PlantUML), Microsoft Edge (for PDF
-export). Node.js with `mmdc` is optional and only needed if Mermaid blocks
-are present.
+Requires Python 3.10+, Microsoft Edge (for PDF export). Node.js with `mmdc`
+is optional and only needed if Mermaid blocks are present.
 
 ```bash
 python -m venv .venv
@@ -139,21 +133,14 @@ python -m venv .venv
 Diagram Engines
 ---------------
 
-**PlantUML** is bundled (`scripts/plantuml.jar`). The renderer locates `java`
-via `shutil.which("java")` and invokes:
-
-```
-java -jar plantuml.jar -charset UTF-8 -tpng -pipe < <source> > <png>
-```
-
-The `-pipe` flag avoids any dependency on the filename PlantUML would
-otherwise derive from `@startuml <name>`.
-
 **Mermaid** uses the external `mmdc` CLI when available. Each block is
 written to a temp file and rendered to PNG; the base64 is embedded in the
 HTML. If `mmdc` is missing, blocks fall back to a fenced code block.
 
-Both engines share the same disk cache under `.diagram_cache/<doc_stem>/`.
+**Inline SVG** blocks are rasterized through `resvg-py` because `tkinterweb`
+does not reliably render embedded SVG fragments directly.
+
+Both renderers share the same disk cache under `.diagram_cache/<doc_stem>/`.
 Entries are `<sha256>.b64` files containing the base64 PNG payload. The
 cache is invalidated for the current document on Refresh, and globally on
 Clear Cache (menu Tools).

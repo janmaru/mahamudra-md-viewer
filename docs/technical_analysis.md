@@ -18,19 +18,19 @@ The interface follows a strict **Design System** documented in `/ui`. Any change
 
 ### External Integrations (Diagrams and PDF)
 The application extends standard Markdown capabilities by integrating external rendering engines:
-1. **Mermaid**: Requires `mmdc` (Mermaid CLI) installed via npm. Diagrams are rendered asynchronously as SVG/PNG.
-2. **PlantUML**: Uses `plantuml.jar` (bundled in the `scripts/` folder). Requires **Java JRE** installed on the system.
+1. **Mermaid**: Requires `mmdc` (Mermaid CLI) installed via npm. Diagrams are rendered asynchronously to PNG for embedding.
+2. **Inline SVG**: Rasterized via `resvg-py` so embedded SVG fragments display correctly inside `tkinterweb`.
 3. **PDF Export**: Uses **Microsoft Edge** in *headless* mode (via CLI) to guarantee 100% fidelity with the on-screen rendering, including custom CSS and diagrams.
 4. **PDF Viewing**: Native, in-app PDF viewer backed by **`pypdfium2`** (Google's PDFium bindings). See the dedicated architectural pattern below.
 
 ### Caching and Performance
 - **Diagram Cache**: Implemented in `services/diagram_cache.py`. Uses SHA-256 hashing of the diagram source to avoid redundant renders, speeding up loading of complex documents.
-- **Async Rendering**: Mermaid and PlantUML diagrams are processed in separate threads (`threading`) to avoid blocking the GUI during load.
+- **Async Rendering**: Mermaid and inline SVG diagrams are processed in separate threads (`threading`) to avoid blocking the GUI during load.
 
 ### System Requirements
 - **OS**: Windows (optimized), Linux, macOS.
 - **Python dependencies**: See `requirements.txt`.
-- **External dependencies**: Java (for PlantUML), Node.js/mmdc (for Mermaid), Microsoft Edge (for PDF).
+- **External dependencies**: Node.js/mmdc (for Mermaid), Microsoft Edge (for PDF).
 
 ## Architectural Pattern: Sidebar Toggle (PanedWindow Management)
 
@@ -103,7 +103,7 @@ sequenceDiagram
 
 ### Files Involved
 - `md_reader.py`: `_on_link_click` extracts and URL-decodes the fragment, `_load_file` stashes it into `self._pending_fragment`, `_on_tab_change` consumes it and forwards it to the renderer.
-- `services/file_renderer.py`: `load_file(..., fragment=None)` forwards the fragment to `html_frame.load_html(..., fragment=fragment)`. The value is also stored in `ctx.last_fragment` so the async post-Mermaid/PlantUML rerender (`update_html`) preserves the scroll position.
+- `services/file_renderer.py`: `load_file(..., fragment=None)` forwards the fragment to `html_frame.load_html(..., fragment=fragment)`. The value is also stored in `ctx.last_fragment` so the async post-diagram rerender (`update_html`) preserves the scroll position.
 
 ### Notes on Heading IDs
 The `markdown` engine is invoked with the `tables` and `fenced_code` extensions but **without** `toc`. Heading IDs must therefore be supplied explicitly in the source via inline HTML tags (e.g. `### <a id="bcr"></a>BCR`), which Python-markdown preserves in the HTML output. If GitHub-style auto-slugify is needed in the future, add the `toc` extension while making sure it does not collide with the pre-existing manual anchors.

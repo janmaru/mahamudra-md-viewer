@@ -77,7 +77,7 @@
   "dialog.info": "Informazioni",
   "dialog.about": "Informazioni",
   "dialog.author": "Autore",
-  "dialog.description": "Visualizzatore professionale per documenti Markdown, diagrammi Mermaid/PlantUML e documentazione tecnica.",
+  "dialog.description": "Visualizzatore professionale per documenti Markdown, diagrammi Mermaid e SVG inline, e documentazione tecnica.",
   
   "error.file_not_found": "File non trovato: {path}",
   "error.permission_denied": "Accesso negato: {path}",

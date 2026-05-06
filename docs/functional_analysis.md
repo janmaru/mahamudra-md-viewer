@@ -11,7 +11,7 @@ Friedrich - Document Reader is a modern, lightweight Markdown viewer designed to
 - **Zen Mode**: Full-screen mode that hides menus and sidebar for distraction-free reading (toggled with F11 or Esc).
 
 ### 2. Rich Content Handling
-- **Diagrams**: Native support for Mermaid (flowchart, sequence, gantt) and PlantUML (including Salt wireframes).
+- **Diagrams**: Native support for Mermaid (flowchart, sequence, gantt) and inline SVG diagrams.
 - **Tables and Images**: Full support for responsive tables and direct viewing of image files (PNG, JPG, etc.).
 - **CSV Viewer**: Automatic rendering of CSV files as formatted HTML tables.
 
