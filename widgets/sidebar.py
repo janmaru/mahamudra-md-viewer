@@ -124,12 +124,12 @@ class SidePanel:
                                        open=True, values=[str(root_path)])
 
         try:
-            def _sort_key(p: Path) -> tuple[bool, float]:
+            def _sort_key(p: Path) -> tuple[bool, str, float]:
                 try:
                     mtime = p.stat().st_mtime
                 except OSError:
                     mtime = 0.0
-                return (not p.is_dir(), -mtime)
+                return (not p.is_dir(), p.name.lower(), -mtime)
 
             entries = sorted(root_path.iterdir(), key=_sort_key, reverse=self._sort_reverse)
         except PermissionError:
@@ -143,9 +143,6 @@ class SidePanel:
         paired_rd_paths: set[Path] = set()
 
         for p in entries:
-            # Skip hidden folders
-            if any(part.startswith('.') for part in p.relative_to(self._ctx.scan_dir).parts):
-                continue
             ext = p.suffix.lower()
 
             # Skip .rd that has a matching .md sibling — it's rendered as a child below.
