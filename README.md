@@ -103,7 +103,7 @@ md_viewer/
 ├── styles/                   # Markdown CSS themes
 ├── ui/                       # UI_STRUCTURE.md, DESIGN_TOKENS.md, COMPONENT_CONTRACTS.md
 ├── docs/                     # technical_analysis.md, functional_analysis.md, i18n.md
-├── scripts/                  # mermaid.min.js
+├── scripts/                  # mermaid.min.js, set_md_association.ps1, set_lnk_appid.ps1
 ├── assets/                   # Static resources
 ├── errors/                   # Error views and templates
 └── tests/                    # Test scratch
@@ -127,7 +127,50 @@ python -m venv .venv
 # Manual
 ./.venv/Scripts/python md_reader.py --lang en
 ./.venv/Scripts/python md_reader.py --help
+
+# Open a file directly (positional argument, same behavior as "Open file")
+./.venv/Scripts/python md_reader.py path/to/document.md
 ```
+
+
+Windows File Association
+------------------------
+
+Friedrich can be registered as the default handler for `.md` files, so a
+double-click opens the document in a tab exactly like the **Open file** menu
+action. The entry point accepts the file path as a positional argument
+(passed by Windows as `Friedrich.exe "%1"`) and routes it through the same
+`load_file` path used by the file dialog.
+
+1.  Build the standalone executable with PyInstaller:
+
+    ```bash
+    ./.venv/Scripts/pip install pyinstaller
+    ./.venv/Scripts/pyinstaller --noconfirm md_viewer.spec
+    # -> dist/Friedrich.exe  (onefile)
+    ```
+
+2.  Register the association (per-user, no admin required):
+
+    ```powershell
+    .\scripts\set_md_association.ps1
+    # custom exe location:
+    .\scripts\set_md_association.ps1 -ExePath 'D:\apps\Friedrich.exe'
+    # undo:
+    .\scripts\set_md_association.ps1 -Remove
+    ```
+
+    The script creates the `Friedrich.md` ProgId under
+    `HKCU\Software\Classes` and points `.md` at it.
+
+3.  Windows 11 protects the *default app* choice with a hashed `UserChoice`
+    key that cannot be set from a script. Confirm it once:
+    right-click a `.md` file → **Open with** → **Choose another app** →
+    select **Friedrich** → tick **Always use this app** → **OK**.
+
+Re-run the script after any rebuild that changes the exe path. Because the
+build is **onefile**, keep `dist/Friedrich.exe` in place (or re-run the
+"Open with" step if you move it).
 
 
 Diagram Engines

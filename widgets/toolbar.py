@@ -30,6 +30,9 @@ class ToolbarCommands:
     reset_zoom: Callable
     toggle_status_bar: Callable
     set_markdown_theme: Callable
+    new_file: Callable
+    save: Callable
+    save_as: Callable
     quit: Callable
 
 
@@ -98,8 +101,12 @@ class Toolbar:
     def _show_file_menu(self, event):
         i18n = self._ctx.i18n
         items = [
+            (f"{i18n.t('menu.new_file')}       Ctrl+N", self._cmd.new_file),
             (f"{i18n.t('menu.open_file')}      Ctrl+O", self._cmd.open_file),
             (i18n.t('menu.open_folder'), self._cmd.change_folder),
+            "---",
+            (f"{i18n.t('menu.save')}             Ctrl+S", self._cmd.save),
+            (f"{i18n.t('menu.save_as')}     Ctrl+Shift+S", self._cmd.save_as),
             "---",
             (i18n.t('menu.export_pdf'), self._cmd.export_pdf),
             "---",

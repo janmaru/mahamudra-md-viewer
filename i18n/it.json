@@ -8,8 +8,11 @@
   "menu.view": "Visualizza",
   "menu.tools": "Strumenti",
   
+  "menu.new_file": "Nuovo Markdown",
   "menu.open_file": "Apri File...",
   "menu.open_folder": "Apri Cartella...",
+  "menu.save": "Salva",
+  "menu.save_as": "Salva con nome...",
   "menu.export_pdf": "Esporta PDF...",
   "menu.exit": "Esci",
   
@@ -49,11 +52,14 @@
 
   "empty_state.title": "Friedrich - Document Reader",
   "empty_state.subtitle": "Seleziona un file per iniziare",
+  "empty_state.new_file": "Nuovo Markdown",
   "empty_state.open_file": "Apri File",
   "empty_state.change_folder": "Cambia Cartella",
+  "empty_state.keyboard_new": "Ctrl + N",
   "empty_state.keyboard_open": "Ctrl + O",
   "empty_state.keyboard_folder": "Ctrl + Maiusc + O",
-  
+
+  "shortcuts.new_file": "Nuovo Markdown",
   "shortcuts.open_file": "Apri file",
   "shortcuts.change_folder": "Cambia cartella",
   "shortcuts.toggle_sidebar": "Attiva/Disattiva barra laterale",
@@ -78,6 +84,8 @@
   "dialog.about": "Informazioni",
   "dialog.author": "Autore",
   "dialog.description": "Visualizzatore professionale per documenti Markdown, diagrammi Mermaid e SVG inline, e documentazione tecnica.",
+  "dialog.unsaved_title": "Modifiche non salvate",
+  "dialog.unsaved_message": "Salvare le modifiche a {name}?",
   
   "error.file_not_found": "File non trovato: {path}",
   "error.permission_denied": "Accesso negato: {path}",
@@ -85,6 +93,7 @@
   "error.export_failed": "Esportazione PDF non riuscita",
   "error.render_failed": "Impossibile renderizzare il file",
   "error.save_image_failed": "Salvataggio immagine non riuscito: {error}",
+  "error.save_failed": "Salvataggio non riuscito: {path}",
   
   "success.file_opened": "File aperto: {name}",
   "success.pdf_exported": "PDF esportato con successo",

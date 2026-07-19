@@ -20,6 +20,8 @@ class TabInfo:
     scroll_pos: float = 0.0
     rendered: bool = False
     last_mtime: float = 0.0
+    is_dirty: bool = False
+    is_untitled: bool = False
     # Widgets specific to this tab (created and managed by TabManager)
     container: Optional[tk.Frame] = None
     html_frame: Optional[HtmlFrame] = None
@@ -53,6 +55,7 @@ class AppContext:
     css_path: Optional[Path] = None
     diagram_registry: dict[str, str] = field(default_factory=dict)
     diagram_render_in_flight: int = 0
+    untitled_counter: int = 0
     
     zen_mode: bool = False
     left_visible: bool = True

@@ -77,6 +77,7 @@ class FileRenderer:
                     ctx.source_text.insert("1.0", f"File: {path}\nSize: {size:,} bytes")
                 except OSError:
                     ctx.source_text.insert("1.0", f"File: {path}")
+                self._mark_source_clean()
             self._update_status(path, f"[Image: {path.name}]")
             return
 
@@ -117,8 +118,48 @@ class FileRenderer:
         else:
             ctx.source_text.delete("1.0", tk.END)
             ctx.source_text.insert("1.0", content)
+            self._mark_source_clean()
 
         self._update_status(path, content)
+
+    def _mark_source_clean(self) -> None:
+        """Reset the source widget's modified flag and the active tab's dirty
+        state after a programmatic load — typing-driven edits should be the
+        only thing that flips the dirty marker."""
+        ctx = self._ctx
+        if ctx.source_text is None:
+            return
+        ctx.source_text.edit_modified(False)
+        tab = ctx.current_tab
+        if tab is not None:
+            tab.is_dirty = False
+
+    def render_in_memory(self, content: str, base_path: Path | None = None) -> None:
+        """Render markdown from an in-memory string into the current tab's HTML frame.
+
+        Used when the source view is dirty or the tab is untitled: the disk
+        copy is stale or absent, so we render what the editor currently holds.
+        """
+        ctx = self._ctx
+        if ctx.html_frame is None:
+            return
+        if base_path is not None and base_path.exists():
+            set_cache_document(base_path)
+        html_body = self._render_markdown(content, async_mermaid=True)
+        full_html = build_html(html_body, ctx.css_path, zoom=ctx.zoom_level)
+        base_dir = (base_path.parent if base_path is not None else ctx.scan_dir)
+        base_url_uri = base_dir.as_uri() + "/"
+        ctx.last_fragment = None
+        ctx.html_frame.load_html(full_html, base_url=base_url_uri)
+        self._render_diagrams_async(content)
+        self._update_status_string(base_path, content)
+
+    def _update_status_string(self, path: Path | None, content: str) -> None:
+        name = path.name if path is not None else "untitled.md"
+        lines = len(content.splitlines())
+        i18n = self._ctx.i18n
+        status_text = f"  {name}    {i18n.t('status.lines', count=lines)}    UTF-8"
+        self._ctx.root.status_label.config(text=status_text)
 
     def update_html(self, html_body: str) -> None:
         ctx = self._ctx

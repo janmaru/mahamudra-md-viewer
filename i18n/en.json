@@ -8,8 +8,11 @@
   "menu.view": "View",
   "menu.tools": "Tools",
   
+  "menu.new_file": "New Markdown",
   "menu.open_file": "Open File...",
   "menu.open_folder": "Open Folder...",
+  "menu.save": "Save",
+  "menu.save_as": "Save As...",
   "menu.export_pdf": "Export PDF...",
   "menu.exit": "Exit",
   
@@ -49,11 +52,14 @@
 
   "empty_state.title": "Friedrich - Document Reader",
   "empty_state.subtitle": "Select a file to get started",
+  "empty_state.new_file": "New Markdown",
   "empty_state.open_file": "Open File",
   "empty_state.change_folder": "Change Folder",
+  "empty_state.keyboard_new": "Ctrl + N",
   "empty_state.keyboard_open": "Ctrl + O",
   "empty_state.keyboard_folder": "Ctrl + Shift + O",
-  
+
+  "shortcuts.new_file": "New Markdown",
   "shortcuts.open_file": "Open file",
   "shortcuts.change_folder": "Change folder",
   "shortcuts.toggle_sidebar": "Toggle sidebar",
@@ -78,6 +84,8 @@
   "dialog.about": "About",
   "dialog.author": "Author",
   "dialog.description": "Professional viewer for Markdown documents, Mermaid and inline SVG diagrams, and technical documentation.",
+  "dialog.unsaved_title": "Unsaved Changes",
+  "dialog.unsaved_message": "Save changes to {name}?",
   
   "error.file_not_found": "File not found: {path}",
   "error.permission_denied": "Permission denied: {path}",
@@ -85,6 +93,7 @@
   "error.export_failed": "PDF export failed",
   "error.render_failed": "Failed to render file",
   "error.save_image_failed": "Failed to save image: {error}",
+  "error.save_failed": "Failed to save: {path}",
   
   "success.file_opened": "File opened: {name}",
   "success.pdf_exported": "PDF exported successfully",

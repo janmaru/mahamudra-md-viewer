@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import ttk
+from tkinter import messagebox, ttk
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 from tkinterweb import HtmlFrame
@@ -89,6 +89,36 @@ class TabManager:
             tab.html_frame = HtmlFrame(tab.container, messages_enabled=False,
                                        javascript_enabled=True,
                                        on_link_click=self._ctx.root._on_link_click)
+        self._build_source_view(tab)
+        if not is_pdf and not is_rd:
+            tab.search_bar = SearchBar(tab.container, self._ctx, tab)
+            tab.search_bar.frame.pack(side=tk.TOP, fill=tk.X)
+            self._bind_dirty(tab)
+
+        self._ctx.open_tabs.append(tab)
+        self.select_tab(len(self._ctx.open_tabs) - 1)
+        self.refresh_tabs()
+
+    def add_untitled_tab(self, virtual_path: Path):
+        tab = TabInfo(path=virtual_path)
+        tab.is_untitled = True
+        tab.view_mode = "source"
+        tab.container = tk.Frame(self.content_area, bg=self._ctx.colors["bg"])
+        tab.html_frame = HtmlFrame(tab.container, messages_enabled=False,
+                                   javascript_enabled=True,
+                                   on_link_click=self._ctx.root._on_link_click)
+        self._build_source_view(tab)
+        tab.search_bar = SearchBar(tab.container, self._ctx, tab)
+        tab.search_bar.frame.pack(side=tk.TOP, fill=tk.X)
+        self._bind_dirty(tab)
+        tab.source_text.edit_modified(False)
+
+        self._ctx.open_tabs.append(tab)
+        self.select_tab(len(self._ctx.open_tabs) - 1)
+        self.refresh_tabs()
+        tab.source_text.focus_set()
+
+    def _build_source_view(self, tab: TabInfo):
         tab.source_frame = tk.Frame(tab.container, bg=self._ctx.colors["bg"])
         tab.source_text = tk.Text(
             tab.source_frame, bg=self._ctx.colors["bg"],
@@ -96,19 +126,33 @@ class TabManager:
             insertbackground=self._ctx.colors["text"], borderwidth=0,
             padx=20, pady=20, font=(FONT_MONO, 11),
             selectbackground=self._ctx.colors["selection"],
-            selectforeground=self._ctx.colors["text_bright"])
+            selectforeground=self._ctx.colors["text_bright"],
+            undo=True)
         source_scroll = ttk.Scrollbar(tab.source_frame, orient=tk.VERTICAL, command=tab.source_text.yview)
         tab.source_text.configure(yscrollcommand=source_scroll.set)
         source_scroll.pack(side=tk.RIGHT, fill=tk.Y)
         tab.source_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        # Bind Ctrl+C to copy content from source view
         tab.source_text.bind("<Control-c>", lambda e: self._ctx.root._copy_content())
-        if not is_pdf and not is_rd:
-            tab.search_bar = SearchBar(tab.container, self._ctx, tab)
-            tab.search_bar.frame.pack(side=tk.TOP, fill=tk.X)
 
-        self._ctx.open_tabs.append(tab)
-        self.select_tab(len(self._ctx.open_tabs) - 1)
+    def _bind_dirty(self, tab: TabInfo):
+        def _on_modified(event=None):
+            txt = tab.source_text
+            if txt is None:
+                return
+            if not txt.edit_modified():
+                return
+            was_dirty = tab.is_dirty
+            tab.is_dirty = True
+            txt.edit_modified(False)
+            if not was_dirty:
+                self.refresh_tabs()
+        tab.source_text.bind("<<Modified>>", _on_modified)
+
+    def mark_clean(self, tab: TabInfo):
+        if tab.source_text is None:
+            return
+        tab.source_text.edit_modified(False)
+        tab.is_dirty = False
         self.refresh_tabs()
 
     def select_tab(self, index: int):
@@ -139,10 +183,31 @@ class TabManager:
         self.update_breadcrumbs(active_tab.path)
         self._on_tab_change(active_tab)
 
-    def close_tab(self, index: int):
+    def close_tab(self, index: int, confirm: bool = True):
         if not (0 <= index < len(self._ctx.open_tabs)):
             return
-        tab = self._ctx.open_tabs.pop(index)
+        tab = self._ctx.open_tabs[index]
+        if confirm and tab.is_dirty:
+            i18n = self._ctx.i18n
+            answer = messagebox.askyesnocancel(
+                i18n.t("dialog.unsaved_title"),
+                i18n.t("dialog.unsaved_message", name=tab.path.name),
+            )
+            if answer is None:
+                return
+            if answer:
+                self.select_tab(index)
+                root = self._ctx.root
+                saver = getattr(root, "_save_current", None)
+                if saver is None or not saver():
+                    return
+        # Re-find the index by reference: save_as / refresh may have mutated
+        # the list ordering (currently they don't, but stay defensive).
+        try:
+            index = self._ctx.open_tabs.index(tab)
+        except ValueError:
+            return
+        self._ctx.open_tabs.pop(index)
         tab.container.destroy()
 
         if not self._ctx.open_tabs:
@@ -175,7 +240,8 @@ class TabManager:
                 indicator = tk.Frame(inner, bg=colors["accent"], height=2)
                 indicator.pack(side=tk.TOP, fill=tk.X)
             
-            lbl = tk.Label(inner, text=tab.path.name, font=(FONT, 9),
+            label_text = ("\u25CF " if tab.is_dirty else "") + tab.path.name
+            lbl = tk.Label(inner, text=label_text, font=(FONT, 9),
                            bg=colors["bg"] if is_active else colors["toolbar"],
                            fg=colors["text_bright"] if is_active else colors["text"])
             lbl.pack(side=tk.LEFT, pady=(4 if is_active else 6, 6))

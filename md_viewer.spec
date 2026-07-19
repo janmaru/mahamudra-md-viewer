@@ -12,7 +12,11 @@ a = Analysis(
     binaries=[],
     datas=[
         ("scripts/mermaid.min.js", "scripts"),
+        ("scripts/preview_icon_256.png", "scripts"),  # empty-state logo (PIL)
         ("styles/*.css", "styles"),
+        ("i18n/en.json", "i18n"),
+        ("i18n/it.json", "i18n"),
+        ("app_icon.ico", "."),
         ("VERSION", "."),
     ],
     hiddenimports=[

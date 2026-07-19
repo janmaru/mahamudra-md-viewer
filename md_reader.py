@@ -31,11 +31,12 @@ from services.file_renderer import FileRenderer, IMAGE_EXTS
 from services.pdf_exporter import export_pdf
 from services.rd_parser import parse_rd
 from services.diagram_cache import clear as clear_diagram_cache
+from application.use_cases.save_markdown import SaveMarkdownUseCase
 
 
 class MarkdownReader(tk.Tk):
 
-    def __init__(self):
+    def __init__(self, initial_file: Path | None = None):
         super().__init__()
         from i18n import get_i18n
         
@@ -55,7 +56,8 @@ class MarkdownReader(tk.Tk):
         )
         ctx = self._ctx
         self._renderer = FileRenderer(ctx)
-        
+        self._saver = SaveMarkdownUseCase()
+
         ctx.save_settings = self._save_settings
         ctx.show_toast = self._show_toast
         ctx.load_file = self._load_file
@@ -90,6 +92,11 @@ class MarkdownReader(tk.Tk):
         if ctx.current_file and ctx.current_file.exists():
             self.after(100, lambda: self._load_file(ctx.current_file))
 
+        # File passed on the command line (e.g. Windows file association /
+        # "Open with"): open it exactly like the "Open file" menu action.
+        if initial_file and initial_file.exists():
+            self.after(120, lambda: self._load_file(initial_file))
+
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         
         # Global keyboard shortcuts (only bind once in __init__)
@@ -98,6 +105,9 @@ class MarkdownReader(tk.Tk):
         self.bind_all("<Control-r>", lambda e: self._refresh_all())
         self.bind_all("<Control-b>", lambda e: self._toggle_sidebar())
         self.bind_all("<Control-f>", lambda e: self._focus_search())
+        self.bind_all("<Control-n>", lambda e: self._new_markdown())
+        self.bind_all("<Control-s>", lambda e: self._save_current())
+        self.bind_all("<Control-Shift-S>", lambda e: self._save_as_current())
         self.bind_all("<Escape>", self._on_escape)
         self.bind_all("<Alt-z>", lambda e: self._toggle_zen_mode())
         self.bind_all("<F11>", lambda e: self._toggle_zen_mode())
@@ -108,8 +118,30 @@ class MarkdownReader(tk.Tk):
         _do_save_settings(self._ctx)
 
     def _on_close(self):
+        if not self._confirm_close_dirty_tabs():
+            return
         self._save_settings()
         self.destroy()
+
+    def _confirm_close_dirty_tabs(self) -> bool:
+        i18n = self._ctx.i18n
+        for tab in list(self._ctx.open_tabs):
+            if not tab.is_dirty:
+                continue
+            answer = messagebox.askyesnocancel(
+                i18n.t("dialog.unsaved_title"),
+                i18n.t("dialog.unsaved_message", name=tab.path.name),
+            )
+            if answer is None:
+                return False
+            if answer:
+                idx = self._ctx.open_tabs.index(tab)
+                self._tab_manager.select_tab(idx)
+                if not self._save_current():
+                    return False
+            else:
+                tab.is_dirty = False
+        return True
 
     def _focus_search(self):
         tab = self._ctx.current_tab
@@ -250,6 +282,7 @@ class MarkdownReader(tk.Tk):
             clear_diagram_cache=self._clear_diagram_cache, zoom_in=self._zoom_in,
             zoom_out=self._zoom_out, reset_zoom=self._reset_zoom,
             toggle_status_bar=self._toggle_status_bar, set_markdown_theme=self._set_markdown_theme,
+            new_file=self._new_markdown, save=self._save_current, save_as=self._save_as_current,
             quit=self.quit,
         )
         self._toolbar = Toolbar(self, self._ctx, commands)
@@ -298,7 +331,9 @@ class MarkdownReader(tk.Tk):
         
         self._tab_manager = TabManager(self.workspace_container, self._ctx, on_tab_change=self._on_tab_change)
         self._tab_manager.main_frame.pack(fill=tk.BOTH, expand=True)
-        self._empty_state = EmptyState(self._tab_manager.content_area, self._ctx, on_open_file=self.open_file)
+        self._empty_state = EmptyState(self._tab_manager.content_area, self._ctx,
+                                       on_open_file=self.open_file,
+                                       on_new_file=self._new_markdown)
 
         self._update_ui_state()
 
@@ -307,7 +342,7 @@ class MarkdownReader(tk.Tk):
             self._show_home_screen = False
             self._update_renderer_refs(tab)
             self.title(f"{tab.path.name} - Friedrich - Document Reader")
-            if tab.path.exists():
+            if not tab.is_untitled and tab.path.exists():
                 try:
                     current_mtime = tab.path.stat().st_mtime
                 except OSError:
@@ -380,9 +415,11 @@ class MarkdownReader(tk.Tk):
         self._ctx.tree_cache.clear()
         self._sidebar.build_tree(self._ctx.scan_dir)
         self._sidebar.update_bookmarks_list()
+        tab = self._ctx.current_tab
+        if tab and (tab.is_dirty or tab.is_untitled):
+            return
         if self._ctx.current_file and self._ctx.current_file.exists():
             clear_diagram_cache(self._ctx.current_file.stem)
-            tab = self._ctx.current_tab
             if tab and tab.rsvp_player is not None:
                 try:
                     tab.rsvp_player.load(parse_rd(tab.path))
@@ -399,7 +436,7 @@ class MarkdownReader(tk.Tk):
 
     def _clear_viewer(self):
         while self._ctx.open_tabs:
-            self._tab_manager.close_tab(0)
+            self._tab_manager.close_tab(0, confirm=False)
 
     def _copy_content(self):
         tab = self._ctx.current_tab
@@ -447,6 +484,9 @@ class MarkdownReader(tk.Tk):
             tab.view_mode = "source"
             tab.html_frame.pack_forget()
             tab.source_frame.pack(fill=tk.BOTH, expand=True, after=tab.search_bar.frame)
+            if tab.is_dirty or tab.is_untitled:
+                # Keep current editor buffer — disk copy is stale or absent.
+                return
             ext = tab.path.suffix.lower()
             tab.source_text.delete("1.0", tk.END)
             try:
@@ -455,14 +495,76 @@ class MarkdownReader(tk.Tk):
             except Exception:
                 if not tab.path.exists():
                     tab.source_text.insert("1.0", "# " + tab.path.stem)
+            self._tab_manager.mark_clean(tab)
         else:
             tab.view_mode = "preview"
             tab.source_frame.pack_forget()
             tab.html_frame.pack(fill=tk.BOTH, expand=True, after=tab.search_bar.frame)
-            if tab.path.exists():
+            if tab.is_dirty or tab.is_untitled:
+                content = tab.source_text.get("1.0", "end-1c")
+                base = tab.path if not tab.is_untitled else None
+                self._renderer.render_in_memory(content, base_path=base)
+            elif tab.path.exists():
                 self._renderer.load_file(tab.path, push_history=False)
 
     def open_file(self): self._renderer.open_file_dialog()
+
+    def _new_markdown(self):
+        self._show_home_screen = False
+        self._ctx.untitled_counter += 1
+        n = self._ctx.untitled_counter
+        virtual_path = Path(f"untitled-{n}.md")
+        self._tab_manager.add_untitled_tab(virtual_path)
+
+    def _save_current(self) -> bool:
+        tab = self._ctx.current_tab
+        if not tab or tab.source_text is None:
+            return False
+        if tab.pdf_viewer is not None or tab.rsvp_player is not None:
+            return False
+        if tab.is_untitled:
+            return self._save_as_current()
+        if not self._saver.save(tab):
+            messagebox.showerror(
+                self._ctx.i18n.t("dialog.error"),
+                self._ctx.i18n.t("error.save_failed", path=str(tab.path)),
+            )
+            return False
+        self._tab_manager.mark_clean(tab)
+        try:
+            tab.last_mtime = tab.path.stat().st_mtime
+        except OSError:
+            tab.last_mtime = 0.0
+        self._show_toast(self._ctx.i18n.t("toast.saved"))
+        return True
+
+    def _save_as_current(self) -> bool:
+        tab = self._ctx.current_tab
+        if not tab or tab.source_text is None:
+            return False
+        if tab.pdf_viewer is not None or tab.rsvp_player is not None:
+            return False
+        new_path = self._saver.save_as(self._ctx, tab)
+        if new_path is None:
+            return False
+        tab.path = new_path
+        tab.is_untitled = False
+        try:
+            tab.last_mtime = new_path.stat().st_mtime
+        except OSError:
+            tab.last_mtime = 0.0
+        self._tab_manager.mark_clean(tab)
+        self.title(f"{new_path.name} - Friedrich - Document Reader")
+        self._tab_manager.update_breadcrumbs(new_path)
+        if new_path not in self._ctx.recent_files:
+            self._ctx.recent_files.insert(0, new_path)
+            if len(self._ctx.recent_files) > 10:
+                self._ctx.recent_files.pop()
+            if self._ctx.update_recent_list:
+                self._ctx.update_recent_list()
+        self._refresh_all()
+        self._show_toast(self._ctx.i18n.t("toast.saved"))
+        return True
 
     def _on_link_click(self, url):
         tab = self._ctx.current_tab
@@ -555,12 +657,20 @@ if __name__ == "__main__":
         prog="md_reader"
     )
     parser.add_argument(
-        "--lang", 
+        "--lang",
         choices=["en", "it"],
         default="en",
         help="Language for the application (en=English, it=Italian)"
     )
+    parser.add_argument(
+        "file",
+        nargs="?",
+        default=None,
+        help="Path to a document to open on startup (used by the Windows file association)"
+    )
     args = parser.parse_args()
+
+    initial_file = Path(args.file).resolve() if args.file else None
 
     if sys.platform == "win32":
         try:
@@ -576,5 +686,5 @@ if __name__ == "__main__":
     # Initialize i18n before creating the app
     init_i18n(args.lang)
 
-    app = MarkdownReader()
+    app = MarkdownReader(initial_file=initial_file)
     app.mainloop()
