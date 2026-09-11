@@ -57,6 +57,42 @@ LIGHT_COLORS = {
     "btn_hover": "#f9fafb",
 }
 
+# Markdown syntax highlighting palette for the source editor (tk.Text tags).
+# Keys are the tag names used by services/md_highlighter.py.
+MD_SYNTAX_DARK = {
+    "md_heading": "#569cd6",
+    "md_bold": "#d4d4d4",
+    "md_italic": "#d4d4d4",
+    "md_code": "#ce9178",
+    "md_code_block": "#ce9178",
+    "md_fence": "#6a9955",
+    "md_link": "#9cdcfe",
+    "md_url": "#808080",
+    "md_image": "#9cdcfe",
+    "md_list": "#6796e6",
+    "md_quote": "#6a9955",
+    "md_hr": "#6796e6",
+    "md_table": "#6796e6",
+    "md_html": "#808080",
+}
+
+MD_SYNTAX_LIGHT = {
+    "md_heading": "#800000",
+    "md_bold": "#222222",
+    "md_italic": "#222222",
+    "md_code": "#a31515",
+    "md_code_block": "#a31515",
+    "md_fence": "#008000",
+    "md_link": "#0451a5",
+    "md_url": "#808080",
+    "md_image": "#0451a5",
+    "md_list": "#0451a5",
+    "md_quote": "#008000",
+    "md_hr": "#0451a5",
+    "md_table": "#0451a5",
+    "md_html": "#800000",
+}
+
 ICONS = {
     ".md": "M\u2193",
     ".txt": "\u2261",

@@ -49,12 +49,17 @@ def export_pdf(ctx: AppContext, renderer: FileRenderer) -> None:
     if not dest_path:
         return
 
-    if ctx.view_mode == "preview":
+    if ctx.view_mode in ("preview", "split"):
         ext = ctx.current_file.suffix.lower()
-        try:
-            content = ctx.current_file.read_text(encoding="utf-8")
-        except UnicodeDecodeError:
-            content = ctx.current_file.read_text(encoding="latin-1")
+        tab = ctx.current_tab
+        if tab is not None and tab.source_text is not None and (tab.is_dirty or tab.is_untitled):
+            # The preview shows the editor buffer: export that, not the disk copy.
+            content = tab.source_text.get("1.0", "end-1c")
+        else:
+            try:
+                content = ctx.current_file.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                content = ctx.current_file.read_text(encoding="latin-1")
 
         if ext == ".log":
             dark_bg = "dark" in (ctx.css_path.stem if ctx.css_path else "dark")

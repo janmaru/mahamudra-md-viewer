@@ -45,13 +45,14 @@ def inject_svg_placeholders(html: str, svg_blocks: list[str]) -> str:
 
 
 def inject_svg_images(html: str, svg_blocks: list[str],
-                      diagram_registry: dict | None = None) -> str:
+                      diagram_registry: dict | None = None,
+                      doc: str | None = None) -> str:
     """
     Replace SVG placeholders with rasterised PNG images (base64-embedded).
     Falls back to a raw <pre> block if rasterisation fails.
     """
     for i, svg in enumerate(svg_blocks):
-        png_b64 = _render_svg_to_png_b64(svg)
+        png_b64 = _render_svg_to_png_b64(svg, doc)
         if png_b64:
             if diagram_registry is not None:
                 key = f"d{len(diagram_registry)}"
@@ -75,11 +76,12 @@ def inject_svg_images(html: str, svg_blocks: list[str],
     return html
 
 
-def _render_svg_to_png_b64(svg_text: str) -> str | None:
-    """Rasterise an SVG string to base64 PNG. Uses the shared disk cache."""
+def _render_svg_to_png_b64(svg_text: str, doc: str | None = None) -> str | None:
+    """Rasterise an SVG string to base64 PNG. Uses the shared disk cache
+    (``doc`` selects the per-document cache folder; None = current document)."""
     from services.diagram_cache import get as cache_get, put as cache_put
 
-    cached = cache_get(svg_text)
+    cached = cache_get(svg_text, doc)
     if cached:
         return cached
 
@@ -98,5 +100,5 @@ def _render_svg_to_png_b64(svg_text: str) -> str | None:
         return None
 
     png_b64 = base64.b64encode(png_bytes).decode("ascii")
-    cache_put(svg_text, png_b64)
+    cache_put(svg_text, png_b64, doc)
     return png_b64

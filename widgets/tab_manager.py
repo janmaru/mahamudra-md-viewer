@@ -6,8 +6,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 from tkinterweb import HtmlFrame
 
-from constants import FONT, FONT_MONO
+from constants import FONT, FONT_MONO, MD_SYNTAX_DARK, MD_SYNTAX_LIGHT
 from app_context import TabInfo
+from services.md_highlighter import MarkdownHighlighter
+from services.file_renderer import IMAGE_EXTS
+from widgets.line_numbers import LineNumbers
+from widgets.current_line import CurrentLineHighlight
 from widgets.search_bar import SearchBar
 from widgets.pdf_viewer import PdfViewer
 from widgets.rsvp_player import RsvpPlayer
@@ -16,11 +20,21 @@ from services.rd_parser import parse_rd
 if TYPE_CHECKING:
     from app_context import AppContext
 
+VIEW_MODES = ("preview", "source", "split")
+
+
 class TabManager:
-    def __init__(self, parent: tk.Widget, ctx: AppContext, on_tab_change: Callable):
+    def __init__(self, parent: tk.Widget, ctx: AppContext, on_tab_change: Callable,
+                 on_source_changed: Callable[[TabInfo], None] | None = None,
+                 source_key_bindings: dict[str, Callable] | None = None):
         self._ctx = ctx
         self._parent = parent
         self._on_tab_change = on_tab_change
+        # Fired after a typing-driven edit marks the tab dirty (live preview hook).
+        self._on_source_changed = on_source_changed
+        # Extra key bindings installed on every editor widget; handlers run
+        # with "break" so they replace the default Text class binding.
+        self._source_key_bindings = source_key_bindings or {}
         colors = ctx.colors
 
         # Main Container (Workspace attivo)
@@ -86,14 +100,19 @@ class TabManager:
             except OSError:
                 pass
         else:
-            tab.html_frame = HtmlFrame(tab.container, messages_enabled=False,
-                                       javascript_enabled=True,
-                                       on_link_click=self._ctx.root._on_link_click)
-        self._build_source_view(tab)
-        if not is_pdf and not is_rd:
+            self._build_document_views(tab)
+        if is_pdf or is_rd:
+            # Placeholder editor so shared code paths (zoom, copy) stay uniform.
+            self._build_source_view(tab, tab.container, editable=False)
+        else:
             tab.search_bar = SearchBar(tab.container, self._ctx, tab)
             tab.search_bar.frame.pack(side=tk.TOP, fill=tk.X)
-            self._bind_dirty(tab)
+            if ext in IMAGE_EXTS:
+                # The source view of an image is metadata: never editable, never saved.
+                tab.read_only = True
+                tab.source_text.configure(state="disabled")
+            else:
+                self._bind_dirty(tab)
 
         self._ctx.open_tabs.append(tab)
         self.select_tab(len(self._ctx.open_tabs) - 1)
@@ -104,10 +123,7 @@ class TabManager:
         tab.is_untitled = True
         tab.view_mode = "source"
         tab.container = tk.Frame(self.content_area, bg=self._ctx.colors["bg"])
-        tab.html_frame = HtmlFrame(tab.container, messages_enabled=False,
-                                   javascript_enabled=True,
-                                   on_link_click=self._ctx.root._on_link_click)
-        self._build_source_view(tab)
+        self._build_document_views(tab)
         tab.search_bar = SearchBar(tab.container, self._ctx, tab)
         tab.search_bar.frame.pack(side=tk.TOP, fill=tk.X)
         self._bind_dirty(tab)
@@ -118,8 +134,19 @@ class TabManager:
         self.refresh_tabs()
         tab.source_text.focus_set()
 
-    def _build_source_view(self, tab: TabInfo):
-        tab.source_frame = tk.Frame(tab.container, bg=self._ctx.colors["bg"])
+    def _build_document_views(self, tab: TabInfo):
+        """Create the preview (HtmlFrame) and the editor inside a horizontal
+        PanedWindow; ``apply_view_mode`` decides which panes are visible."""
+        tab.view_paned = ttk.PanedWindow(tab.container, orient=tk.HORIZONTAL)
+        tab.html_frame = HtmlFrame(tab.view_paned, messages_enabled=False,
+                                   javascript_enabled=True,
+                                   on_link_click=self._ctx.root._on_link_click)
+        self._build_source_view(tab, tab.view_paned, editable=True)
+
+    def _build_source_view(self, tab: TabInfo, parent: tk.Widget, editable: bool):
+        tab.source_frame = tk.Frame(parent, bg=self._ctx.colors["bg"])
+        # The gutter is packed first so it keeps the left edge; the editor then
+        # fills what is left.
         tab.source_text = tk.Text(
             tab.source_frame, bg=self._ctx.colors["bg"],
             fg=self._ctx.colors["text_bright"],
@@ -127,12 +154,127 @@ class TabManager:
             padx=20, pady=20, font=(FONT_MONO, 11),
             selectbackground=self._ctx.colors["selection"],
             selectforeground=self._ctx.colors["text_bright"],
-            undo=True)
+            undo=True, wrap="word")
         source_scroll = ttk.Scrollbar(tab.source_frame, orient=tk.VERTICAL, command=tab.source_text.yview)
-        tab.source_text.configure(yscrollcommand=source_scroll.set)
-        source_scroll.pack(side=tk.RIGHT, fill=tk.Y)
-        tab.source_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        tab.source_text.bind("<Control-c>", lambda e: self._ctx.root._copy_content())
+
+        if editable:
+            colors = self._ctx.colors
+            tab.line_numbers = LineNumbers(tab.source_frame, tab.source_text, colors,
+                                           FONT_MONO, 11)
+            tab.line_numbers.pack(side=tk.LEFT, fill=tk.Y)
+            source_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+            tab.source_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+            palette = MD_SYNTAX_DARK if self._ctx.ui_theme == "dark" else MD_SYNTAX_LIGHT
+            tab.highlighter = MarkdownHighlighter(tab.source_text, palette, FONT_MONO, 11)
+            tab.current_line = CurrentLineHighlight(tab.source_text, colors["hover"])
+
+            def _on_yscroll(*args, _bar=source_scroll, _hl=tab.highlighter, _ln=tab.line_numbers):
+                _bar.set(*args)
+                _hl.on_scroll()
+                _ln.on_scroll()
+            tab.source_text.configure(yscrollcommand=_on_yscroll)
+
+            # Anything that can move the caret or change the text: the gutter
+            # and the current-line tag both follow it.
+            def _caret_moved(_event=None, _ln=tab.line_numbers, _cl=tab.current_line):
+                _cl.refresh()
+                _ln.schedule()
+            for seq in ("<KeyRelease>", "<ButtonRelease-1>", "<<Modified>>",
+                        "<<CaretMoved>>", "<Configure>", "<MouseWheel>"):
+                tab.source_text.bind(seq, _caret_moved, add="+")
+            tab.source_text.after_idle(_caret_moved)
+
+            def _guard_hidden_keys(event, _tab=tab):
+                """In preview the editor is unmapped but may still hold the
+                keyboard focus (the HtmlFrame cannot take it: Tk crashes on
+                Tab there). Swallow anything that would type into the
+                invisible buffer, while leaving shortcuts with Control or Alt
+                to the global bindings."""
+                if _tab.view_mode != "preview":
+                    return None
+                if event.state & 0x0004 or event.state & 0x0008 or event.state & 0x20000:
+                    return None  # Control / Alt: a shortcut, not text
+                if event.char and event.char.isprintable():
+                    return "break"
+                return None
+            tab.source_text.bind("<Key>", _guard_hidden_keys, add="+")
+
+            for sequence, handler in self._source_key_bindings.items():
+                # A handler returning False declined and lets Tk apply its own
+                # binding (Enter outside a list inserts a plain newline);
+                # anything else, None included, swallows the key.
+                tab.source_text.bind(
+                    sequence, lambda e, h=handler: "break" if h() is not False else None)
+        else:
+            source_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+            tab.source_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            tab.source_text.configure(yscrollcommand=source_scroll.set)
+
+    def apply_view_mode(self, tab: TabInfo, center_sash: bool = False):
+        """Arrange the tab's PanedWindow according to ``tab.view_mode``.
+
+        preview -> [html_frame]; source -> [source_frame];
+        split   -> [source_frame | html_frame]. ``center_sash`` places the
+        sash at 50% and is meant for the transition *into* split; tab
+        switches keep whatever position the user dragged it to.
+        No-op for PDF / RSVP tabs, which have no ``view_paned``.
+        """
+        paned = tab.view_paned
+        if paned is None:
+            return
+        wanted = {
+            "preview": [tab.html_frame],
+            "source": [tab.source_frame],
+            "split": [tab.source_frame, tab.html_frame],
+        }.get(tab.view_mode, [tab.html_frame])
+
+        current = [str(p) for p in paned.panes()]
+        for widget in (tab.source_frame, tab.html_frame):
+            if widget not in wanted and str(widget) in current:
+                paned.forget(widget)
+        current = [str(p) for p in paned.panes()]
+        for pos, widget in enumerate(wanted):
+            if str(widget) not in current:
+                # ttk rejects a numeric index equal to the pane count: use "end".
+                where = pos if pos < len(current) else "end"
+                paned.insert(where, widget, weight=1)
+                current.insert(pos, str(widget))
+
+        if paned.winfo_manager() != "pack":
+            if tab.search_bar is not None:
+                paned.pack(fill=tk.BOTH, expand=True, after=tab.search_bar.frame)
+            else:
+                paned.pack(fill=tk.BOTH, expand=True)
+
+        if len(wanted) == 2 and center_sash:
+            self._center_sash(paned)
+
+    @staticmethod
+    def _center_sash(paned: ttk.PanedWindow, attempts: int = 10) -> None:
+        """Place the sash at 50% once the paned window has laid out its panes.
+
+        ttk sizes freshly inserted panes from their requested widths, so the
+        second pane can collapse to zero until the sash is set explicitly. A
+        sashpos issued before the first layout pass is overwritten by it, so
+        the position is verified and the call retried briefly if needed.
+        """
+        def _try(remaining: int) -> None:
+            try:
+                if not paned.winfo_exists():
+                    return
+                paned.update_idletasks()
+                width = paned.winfo_width()
+                if width > 1 and len(paned.panes()) == 2:
+                    target = width // 2
+                    paned.sashpos(0, target)
+                    if abs(paned.sashpos(0) - target) <= 2:
+                        return
+            except tk.TclError:
+                return
+            if remaining > 0:
+                paned.after(30, lambda: _try(remaining - 1))
+        paned.after(1, lambda: _try(attempts))
 
     def _bind_dirty(self, tab: TabInfo):
         def _on_modified(event=None):
@@ -146,7 +288,9 @@ class TabManager:
             txt.edit_modified(False)
             if not was_dirty:
                 self.refresh_tabs()
-        tab.source_text.bind("<<Modified>>", _on_modified)
+            if self._on_source_changed is not None:
+                self._on_source_changed(tab)
+        tab.source_text.bind("<<Modified>>", _on_modified, add="+")
 
     def mark_clean(self, tab: TabInfo):
         if tab.source_text is None:
@@ -167,17 +311,11 @@ class TabManager:
 
         active_tab.container.pack(fill=tk.BOTH, expand=True)
         if active_tab.pdf_viewer is not None:
-            active_tab.source_frame.pack_forget()
             active_tab.pdf_viewer.pack(fill=tk.BOTH, expand=True)
         elif active_tab.rsvp_player is not None:
-            active_tab.source_frame.pack_forget()
             active_tab.rsvp_player.pack(fill=tk.BOTH, expand=True)
-        elif active_tab.view_mode == "preview":
-            active_tab.source_frame.pack_forget()
-            active_tab.html_frame.pack(fill=tk.BOTH, expand=True, after=active_tab.search_bar.frame)
         else:
-            active_tab.html_frame.pack_forget()
-            active_tab.source_frame.pack(fill=tk.BOTH, expand=True, after=active_tab.search_bar.frame)
+            self.apply_view_mode(active_tab)
 
         self.refresh_tabs()
         self.update_breadcrumbs(active_tab.path)
@@ -208,6 +346,8 @@ class TabManager:
         except ValueError:
             return
         self._ctx.open_tabs.pop(index)
+        if tab.highlighter is not None:
+            tab.highlighter.cancel()
         tab.container.destroy()
 
         if not self._ctx.open_tabs:

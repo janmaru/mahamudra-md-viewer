@@ -99,7 +99,7 @@ class SearchBar:
 
     def _do_search(self, query: str):
         self._search_query = query
-        if self._tab.view_mode == "source":
+        if self._tab.view_mode in ("source", "split"):
             self._search_in_source(query)
         else:
             self._search_in_preview(query)
@@ -149,7 +149,7 @@ class SearchBar:
     def search_next(self):
         if self._search_count <= 0:
             return
-        if self._tab.view_mode == "source":
+        if self._tab.view_mode in ("source", "split"):
             self._search_current = (self._search_current + 1) % self._search_count
             self._highlight_current_source_match()
         else:
@@ -162,7 +162,7 @@ class SearchBar:
     def search_prev(self):
         if self._search_count <= 0:
             return
-        if self._tab.view_mode == "source":
+        if self._tab.view_mode in ("source", "split"):
             self._search_current = (self._search_current - 1) % self._search_count
             self._highlight_current_source_match()
         else:
@@ -173,7 +173,7 @@ class SearchBar:
             text=f"{self._search_current + 1}/{self._search_count}")
 
     def _clear_highlights(self):
-        if self._tab.view_mode == "source":
+        if self._tab.view_mode in ("source", "split"):
             source = self._tab.source_text
             source.tag_remove("search_match", "1.0", tk.END)
             source.tag_remove("search_current", "1.0", tk.END)

@@ -41,14 +41,15 @@ def inject_mermaid_placeholders(html: str, mermaid_blocks: list[str]) -> str:
 
 
 def inject_mermaid_svgs(html: str, mermaid_blocks: list[str],
-                        diagram_registry: dict | None = None) -> str:
+                        diagram_registry: dict | None = None,
+                        doc: str | None = None) -> str:
     """
     Replace mermaid placeholders with pre-rendered PNG images (base64).
     Falls back to raw code block if rendering fails.
     If diagram_registry is provided, stores base64 data and wraps images in clickable links.
     """
     for i, code in enumerate(mermaid_blocks):
-        png_b64 = _render_mermaid_to_png_b64(code)
+        png_b64 = _render_mermaid_to_png_b64(code, doc)
         if png_b64:
             if diagram_registry is not None:
                 key = f"d{len(diagram_registry)}"
@@ -81,11 +82,12 @@ def _find_mmdc() -> str | None:
     return None
 
 
-def _render_mermaid_to_png_b64(code: str) -> str | None:
-    """Render a Mermaid diagram to PNG and return base64-encoded string. Uses disk cache."""
+def _render_mermaid_to_png_b64(code: str, doc: str | None = None) -> str | None:
+    """Render a Mermaid diagram to PNG and return base64-encoded string. Uses disk cache
+    (``doc`` selects the per-document cache folder; None = current document)."""
     from services.diagram_cache import get as cache_get, put as cache_put
 
-    cached = cache_get(code)
+    cached = cache_get(code, doc)
     if cached:
         return cached
 
@@ -111,7 +113,7 @@ def _render_mermaid_to_png_b64(code: str) -> str | None:
         if os.path.exists(tmp_out):
             with open(tmp_out, "rb") as img:
                 png_b64 = base64.b64encode(img.read()).decode("ascii")
-            cache_put(code, png_b64)
+            cache_put(code, png_b64, doc)
             return png_b64
     except Exception:
         return None

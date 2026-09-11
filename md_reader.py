@@ -24,14 +24,18 @@ from i18n import init_i18n
 from widgets.diagram_viewer import DiagramViewer
 from widgets.sidebar import SidePanel
 from widgets.nav_rail import NavRail
-from widgets.tab_manager import TabManager
+from widgets.tab_manager import TabManager, VIEW_MODES
 from widgets.empty_state import EmptyState
 from widgets.toolbar import Toolbar, ToolbarCommands
-from services.file_renderer import FileRenderer, IMAGE_EXTS
+from widgets.editor_actions import EditorActions
+from services.file_renderer import FileRenderer, IMAGE_EXTS, MARKDOWN_EXTS
 from services.pdf_exporter import export_pdf
 from services.rd_parser import parse_rd
 from services.diagram_cache import clear as clear_diagram_cache
 from application.use_cases.save_markdown import SaveMarkdownUseCase
+
+# Delay between the last keystroke and the live preview re-render (split view).
+LIVE_PREVIEW_DELAY_MS = 500
 
 
 class MarkdownReader(tk.Tk):
@@ -57,6 +61,8 @@ class MarkdownReader(tk.Tk):
         ctx = self._ctx
         self._renderer = FileRenderer(ctx)
         self._saver = SaveMarkdownUseCase()
+        self._editor = EditorActions(ctx)
+        self._live_preview_job: str | None = None
 
         ctx.save_settings = self._save_settings
         ctx.show_toast = self._show_toast
@@ -108,6 +114,10 @@ class MarkdownReader(tk.Tk):
         self.bind_all("<Control-n>", lambda e: self._new_markdown())
         self.bind_all("<Control-s>", lambda e: self._save_current())
         self.bind_all("<Control-Shift-S>", lambda e: self._save_as_current())
+        # Formatting shortcuts: also installed per editor widget (with "break")
+        # by TabManager; these global fallbacks cover focus on the preview pane.
+        self.bind_all("<Control-Shift-B>", lambda e: self._editor.bold() if self._editor.can_edit_from_shortcut() else None)
+        self.bind_all("<Control-i>", lambda e: self._editor.italic() if self._editor.can_edit_from_shortcut() else None)
         self.bind_all("<Escape>", self._on_escape)
         self.bind_all("<Alt-z>", lambda e: self._toggle_zen_mode())
         self.bind_all("<F11>", lambda e: self._toggle_zen_mode())
@@ -284,6 +294,16 @@ class MarkdownReader(tk.Tk):
             toggle_status_bar=self._toggle_status_bar, set_markdown_theme=self._set_markdown_theme,
             new_file=self._new_markdown, save=self._save_current, save_as=self._save_as_current,
             quit=self.quit,
+            can_edit=self._editor.can_edit,
+            undo=self._editor.undo, redo=self._editor.redo,
+            cut=self._editor.cut, copy=self._editor.copy, paste=self._editor.paste,
+            select_all=self._editor.select_all,
+            format_bold=self._editor.bold, format_italic=self._editor.italic,
+            format_code=self._editor.inline_code, format_code_block=self._editor.code_block,
+            format_link=self._editor.link, format_heading=self._editor.heading,
+            format_bullet_list=self._editor.bullet_list,
+            format_numbered_list=self._editor.numbered_list,
+            format_quote=self._editor.quote,
         )
         self._toolbar = Toolbar(self, self._ctx, commands)
         self.titlebar = self._toolbar.titlebar
@@ -329,7 +349,20 @@ class MarkdownReader(tk.Tk):
         self.workspace_container = tk.Frame(self.main_paned, bg=self.colors["bg"])
         self.main_paned.add(self.workspace_container, weight=1)
         
-        self._tab_manager = TabManager(self.workspace_container, self._ctx, on_tab_change=self._on_tab_change)
+        self._tab_manager = TabManager(
+            self.workspace_container, self._ctx, on_tab_change=self._on_tab_change,
+            on_source_changed=self._on_source_changed,
+            # Widget-level bindings: Ctrl+I must override the Text default
+            # (insert tab); Ctrl+B stays the sidebar toggle, hence Shift.
+            source_key_bindings={
+                "<Control-Shift-B>": self._editor.bold,
+                "<Control-i>": self._editor.italic,
+                "<Tab>": self._editor.indent,
+                "<Shift-Tab>": self._editor.outdent,
+                "<ISO_Left_Tab>": self._editor.outdent,   # X11 spelling of Shift+Tab
+                "<Return>": self._editor.newline,
+                "<KP_Enter>": self._editor.newline,
+            })
         self._tab_manager.main_frame.pack(fill=tk.BOTH, expand=True)
         self._empty_state = EmptyState(self._tab_manager.content_area, self._ctx,
                                        on_open_file=self.open_file,
@@ -342,20 +375,29 @@ class MarkdownReader(tk.Tk):
             self._show_home_screen = False
             self._update_renderer_refs(tab)
             self.title(f"{tab.path.name} - Friedrich - Document Reader")
+            # Always consume the pending anchor: leaving it set would apply it
+            # to an unrelated document on a later tab switch.
+            fragment = getattr(self, "_pending_fragment", None)
+            self._pending_fragment = None
             if not tab.is_untitled and tab.path.exists():
                 try:
                     current_mtime = tab.path.stat().st_mtime
                 except OSError:
                     current_mtime = 0.0
 
-                fragment = getattr(self, "_pending_fragment", None)
-                self._pending_fragment = None
-
                 is_pdf = tab.pdf_viewer is not None
                 is_rd = tab.rsvp_player is not None
                 if is_rd:
                     tab.rendered = True
                     tab.last_mtime = current_mtime
+                elif tab.is_dirty:
+                    # Unsaved edits: the buffer wins, never reload from disk.
+                    if tab.last_mtime != current_mtime and not tab.external_change_notified:
+                        tab.external_change_notified = True
+                        self._show_toast(self._ctx.i18n.t("toast.file_changed_on_disk", name=tab.path.name),
+                                         duration=3500, bg="#f39c12")
+                    if fragment:
+                        self._render_from_buffer_or_disk(tab, fragment)
                 elif tab.rendered and tab.last_mtime == current_mtime and (not fragment or is_pdf):
                     pass  # DOM still in tab.html_frame / pdf_viewer; skip re-render
                 elif is_pdf:
@@ -452,9 +494,15 @@ class MarkdownReader(tk.Tk):
             self.clipboard_append(text)
             self._show_toast(self._ctx.i18n.t("toast.copied"))
             return
+        # The editor buffer is authoritative whenever it holds unsaved work,
+        # even in preview mode: copy what the user sees.
+        from_buffer = tab.view_mode in ("source", "split") or tab.is_dirty or tab.is_untitled
         try:
-            text = tab.source_text.get("1.0", tk.END).rstrip("\n") if tab.view_mode == "source" else tab.path.read_text(encoding="utf-8")
-        except Exception: return
+            text = (tab.source_text.get("1.0", tk.END).rstrip("\n") if from_buffer
+                    else tab.path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, tk.TclError):
+            self._show_toast(self._ctx.i18n.t("error.copy_failed"))
+            return
         self.clipboard_clear()
         self.clipboard_append(text)
         self._show_toast(self._ctx.i18n.t("toast.copied"))
@@ -474,38 +522,120 @@ class MarkdownReader(tk.Tk):
         toast.after(duration, toast.destroy)
 
     def _toggle_view(self):
+        """Cycle preview -> source -> split -> preview on the active tab."""
         tab = self._ctx.current_tab
         if not tab: return
         if tab.pdf_viewer is not None:
             return
         if tab.rsvp_player is not None:
             return
-        if tab.view_mode == "preview":
-            tab.view_mode = "source"
-            tab.html_frame.pack_forget()
-            tab.source_frame.pack(fill=tk.BOTH, expand=True, after=tab.search_bar.frame)
-            if tab.is_dirty or tab.is_untitled:
-                # Keep current editor buffer — disk copy is stale or absent.
-                return
-            ext = tab.path.suffix.lower()
-            tab.source_text.delete("1.0", tk.END)
+        idx = VIEW_MODES.index(tab.view_mode) if tab.view_mode in VIEW_MODES else 0
+        self._set_view_mode(tab, VIEW_MODES[(idx + 1) % len(VIEW_MODES)])
+
+    def _set_view_mode(self, tab, mode: str):
+        previous = tab.view_mode
+        if mode == previous:
+            return
+        pending_live = self._live_preview_job is not None
+        self._cancel_live_preview()
+        tab.view_mode = mode
+        self._tab_manager.apply_view_mode(tab, center_sash=(mode == "split"))
+
+        editor_appears = mode in ("source", "split") and previous == "preview"
+        preview_appears = mode in ("preview", "split") and previous == "source"
+
+        if editor_appears and not (tab.is_dirty or tab.is_untitled):
+            # Clean tab: the disk copy is authoritative. Dirty / untitled tabs
+            # keep the editor buffer untouched.
+            self._fill_source_from_disk(tab)
+        if preview_appears:
+            self._refresh_preview_from_editor(tab)
+        elif previous == "split" and mode == "preview" and pending_live and self._is_live_previewable(tab):
+            # Flush the debounced render so the preview is not one edit behind.
+            self._render_live_preview(tab)
+        if mode in ("source", "split"):
+            tab.source_text.focus_set()
+        # The focus is deliberately left where it is when going back to
+        # preview: giving it to the HtmlFrame crashes tkinterweb on Tab. The
+        # editor swallows the keys itself instead (TabManager._guard_hidden_keys).
+
+    def _fill_source_from_disk(self, tab):
+        ext = tab.path.suffix.lower()
+        try:
+            content = f"File: {tab.path}\nSize: {tab.path.stat().st_size:,} bytes" if ext in IMAGE_EXTS else tab.path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            content = "# " + tab.path.stem if not tab.path.exists() else ""
+        # set_source honours read-only tabs and clears the undo stack: a disk
+        # load is not a user edit, Undo must not be able to empty the buffer.
+        tab.set_source(content)
+        try:
+            tab.last_mtime = tab.path.stat().st_mtime  # buffer == disk again
+        except OSError:
+            pass
+        tab.external_change_notified = False
+        self._tab_manager.mark_clean(tab)
+
+    def _refresh_preview_from_editor(self, tab):
+        """Render the preview from the editor buffer, which is authoritative
+        once the editor has been shown (dirty, untitled, or clean Markdown).
+        Non-Markdown files (.log, .csv, code) need their dedicated renderer."""
+        if self._is_live_previewable(tab):
+            self._render_live_preview(tab)
+        elif not tab.is_dirty and tab.path.exists():
+            self._renderer.load_file(tab.path, push_history=False)
+        # dirty non-Markdown buffer: keep the existing preview rather than
+        # rendering a .log / .csv as Markdown (load_file would refill the editor)
+
+    # ------------------------------------------------------------ live preview
+    def _on_source_changed(self, tab):
+        """TabManager hook: a typing-driven edit marked ``tab`` dirty."""
+        if tab is not self._ctx.current_tab or tab.view_mode != "split":
+            return
+        self._cancel_live_preview()
+        self._live_preview_job = self.after(
+            LIVE_PREVIEW_DELAY_MS, lambda: self._run_live_preview(tab))
+
+    def _cancel_live_preview(self):
+        if self._live_preview_job is not None:
             try:
-                content = f"File: {tab.path}\nSize: {tab.path.stat().st_size:,} bytes" if ext in IMAGE_EXTS else tab.path.read_text(encoding="utf-8")
-                tab.source_text.insert("1.0", content)
-            except Exception:
-                if not tab.path.exists():
-                    tab.source_text.insert("1.0", "# " + tab.path.stem)
-            self._tab_manager.mark_clean(tab)
-        else:
-            tab.view_mode = "preview"
-            tab.source_frame.pack_forget()
-            tab.html_frame.pack(fill=tk.BOTH, expand=True, after=tab.search_bar.frame)
-            if tab.is_dirty or tab.is_untitled:
-                content = tab.source_text.get("1.0", "end-1c")
-                base = tab.path if not tab.is_untitled else None
-                self._renderer.render_in_memory(content, base_path=base)
-            elif tab.path.exists():
-                self._renderer.load_file(tab.path, push_history=False)
+                self.after_cancel(self._live_preview_job)
+            except tk.TclError:
+                pass
+            self._live_preview_job = None
+
+    @staticmethod
+    def _is_live_previewable(tab) -> bool:
+        """Only Markdown (or untitled) buffers are re-rendered as you type;
+        .log / .csv / code files keep their dedicated renderer."""
+        return tab.is_untitled or tab.path.suffix.lower() in MARKDOWN_EXTS
+
+    def _run_live_preview(self, tab):
+        self._live_preview_job = None
+        if tab is not self._ctx.current_tab or tab.view_mode != "split":
+            return
+        if not self._is_live_previewable(tab):
+            return
+        self._render_live_preview(tab)
+
+    def _render_live_preview(self, tab, fragment: str | None = None):
+        content = tab.source_text.get("1.0", "end-1c")
+        base = tab.path if not tab.is_untitled else None
+        self._renderer.render_in_memory(content, base_path=base, fragment=fragment)
+
+    def _render_from_buffer_or_disk(self, tab, fragment: str | None = None) -> None:
+        """Re-render the active tab, scrolling to ``fragment`` when given.
+        An unsaved buffer is the source of truth; only a clean tab is re-read
+        from disk."""
+        if tab.view_mode not in ("preview", "split"):
+            return
+        # In split the editor buffer always mirrors the file (split is only
+        # entered through _fill_source_from_disk), so render from it: going
+        # through load_file would refill the editor and reset caret and undo.
+        from_buffer = tab.is_dirty or tab.is_untitled or tab.view_mode == "split"
+        if from_buffer and self._is_live_previewable(tab):
+            self._render_live_preview(tab, fragment=fragment)
+        elif not (tab.is_dirty or tab.is_untitled) and tab.path.exists():
+            self._renderer.load_file(tab.path, push_history=False, fragment=fragment)
 
     def open_file(self): self._renderer.open_file_dialog()
 
@@ -522,8 +652,13 @@ class MarkdownReader(tk.Tk):
             return False
         if tab.pdf_viewer is not None or tab.rsvp_player is not None:
             return False
+        if tab.read_only:
+            self._show_toast(self._ctx.i18n.t("toast.read_only_file"))
+            return False
         if tab.is_untitled:
             return self._save_as_current()
+        if not self._confirm_overwrite_if_changed(tab):
+            return False
         if not self._saver.save(tab):
             messagebox.showerror(
                 self._ctx.i18n.t("dialog.error"),
@@ -535,14 +670,33 @@ class MarkdownReader(tk.Tk):
             tab.last_mtime = tab.path.stat().st_mtime
         except OSError:
             tab.last_mtime = 0.0
+        tab.external_change_notified = False
         self._show_toast(self._ctx.i18n.t("toast.saved"))
         return True
+
+    def _confirm_overwrite_if_changed(self, tab) -> bool:
+        """Ask before Save clobbers a file modified outside the editor since
+        the buffer was loaded (mtime differs from the one the buffer is based on)."""
+        try:
+            disk_mtime = tab.path.stat().st_mtime
+        except OSError:
+            return True  # deleted or unreadable: nothing to protect
+        if disk_mtime == tab.last_mtime:
+            return True
+        i18n = self._ctx.i18n
+        return bool(messagebox.askyesno(
+            i18n.t("dialog.overwrite_changed_title"),
+            i18n.t("dialog.overwrite_changed_message", name=tab.path.name),
+            icon="warning"))
 
     def _save_as_current(self) -> bool:
         tab = self._ctx.current_tab
         if not tab or tab.source_text is None:
             return False
         if tab.pdf_viewer is not None or tab.rsvp_player is not None:
+            return False
+        if tab.read_only:
+            self._show_toast(self._ctx.i18n.t("toast.read_only_file"))
             return False
         new_path = self._saver.save_as(self._ctx, tab)
         if new_path is None:
@@ -553,6 +707,7 @@ class MarkdownReader(tk.Tk):
             tab.last_mtime = new_path.stat().st_mtime
         except OSError:
             tab.last_mtime = 0.0
+        tab.external_change_notified = False
         self._tab_manager.mark_clean(tab)
         self.title(f"{new_path.name} - Friedrich - Document Reader")
         self._tab_manager.update_breadcrumbs(new_path)
@@ -585,8 +740,8 @@ class MarkdownReader(tk.Tk):
             if base_url.startswith(("http://", "https://")): webbrowser.open(url)
             return False
         elif not base_url or url.startswith("#"):
-            if fragment and tab.path.exists():
-                self._renderer.load_file(tab.path, push_history=False, fragment=fragment)
+            if fragment:
+                self._render_from_buffer_or_disk(tab, fragment)
             return False
         else:
             path = Path(base_url)
@@ -595,8 +750,8 @@ class MarkdownReader(tk.Tk):
             for ext in ("", ".md", ".markdown", ".mdown", ".mkd"):
                 matches = list(tab.path.parent.rglob(Path(base_url + ext).name)) or list(self._ctx.scan_dir.rglob(Path(base_url + ext).name))
                 if matches: path = matches[0]; break
-        if path.exists() and path.is_dir() and fragment and tab.path.exists():
-            self._renderer.load_file(tab.path, push_history=False, fragment=fragment)
+        if path.exists() and path.is_dir() and fragment:
+            self._render_from_buffer_or_disk(tab, fragment)
             return False
         if path.exists() and path.is_file(): self._load_file(path, fragment=fragment)
         return False
@@ -619,7 +774,14 @@ class MarkdownReader(tk.Tk):
 
     def _set_markdown_theme(self, name):
         self._ctx.theme_index = self._ctx.theme_names.index(name); self._ctx.css_path = self._ctx.themes[name]
-        if self._ctx.view_mode == "preview" and self._ctx.current_file: self._renderer.load_file(self._ctx.current_file, push_history=False)
+        tab = self._ctx.current_tab
+        if tab and tab.view_mode in ("preview", "split"):
+            # Only the CSS changed: re-render the HTML side, never reload the
+            # editor (edits, undo history and caret must survive).
+            if tab.is_dirty or tab.is_untitled or (tab.view_mode == "split" and self._is_live_previewable(tab)):
+                self._render_live_preview(tab)
+            elif tab.path.exists():
+                self._renderer.load_file(tab.path, push_history=False)
         self._save_settings()
 
     def _clear_diagram_cache(self):
@@ -633,17 +795,76 @@ class MarkdownReader(tk.Tk):
         self._ctx.ui_theme = "light" if self._ctx.ui_theme == "dark" else "dark"
         self.colors = LIGHT_COLORS if self._ctx.ui_theme == "light" else DARK_COLORS
         self._save_settings()
-        current_file = self._ctx.current_file
-        open_files = [tab.path for tab in self._ctx.open_tabs]
+        # Widgets are rebuilt from scratch: snapshot every tab first so unsaved
+        # edits, untitled documents, view mode and zoom survive the switch.
+        snapshots = [self._snapshot_tab(tab) for tab in self._ctx.open_tabs]
+        active_i = self._ctx.active_tab_index
+        self._cancel_live_preview()
         self._ctx.open_tabs.clear()
+        self._ctx.active_tab_index = -1
         for widget in self.winfo_children(): widget.destroy()
         self._ctx.colors.clear(); self._ctx.colors.update(self.colors); self.configure(bg=self.colors["bg"])
         self._apply_styles(); self._build_toolbar(); self._build_main_layout(); self._build_status_bar(); self._refresh_all()
-        for file_path in open_files:
-            if file_path.exists():
-                self._load_file(file_path, push_history=False)
-        if current_file and current_file.exists():
-            self._load_file(current_file, push_history=False)
+        restored: list[int] = []
+        for i, snap in enumerate(snapshots):
+            if self._restore_tab(snap):
+                restored.append(i)
+        # Re-map the active tab: a tab that could not be restored shifts every
+        # position after it, so the original index would select the wrong one.
+        if active_i in restored:
+            self._tab_manager.select_tab(restored.index(active_i))
+
+    def _snapshot_tab(self, tab) -> dict:
+        editable = (tab.source_text is not None and tab.pdf_viewer is None
+                    and tab.rsvp_player is None and not tab.read_only)
+        keep_buffer = editable and (tab.is_dirty or tab.is_untitled)
+        return {
+            "path": tab.path,
+            "untitled": tab.is_untitled,
+            "dirty": tab.is_dirty,
+            "view_mode": tab.view_mode,
+            "zoom": tab.zoom_level,
+            "last_mtime": tab.last_mtime,
+            "notified": tab.external_change_notified,
+            "buffer": tab.source_text.get("1.0", "end-1c") if keep_buffer else None,
+        }
+
+    def _restore_tab(self, snap: dict) -> bool:
+        """Recreate one tab from its snapshot. Returns False if it could not be
+        restored (the file disappeared while the window was being rebuilt)."""
+        if snap["untitled"]:
+            self._tab_manager.add_untitled_tab(snap["path"])
+        elif snap["path"].exists():
+            self._load_file(snap["path"], push_history=False)
+        elif snap["buffer"] is not None:
+            # The file disappeared while the window was rebuilt: keep the
+            # unsaved text in an untitled tab rather than dropping it.
+            self._tab_manager.add_untitled_tab(snap["path"])
+            self._show_toast(self._ctx.i18n.t("toast.file_gone_kept_buffer", name=snap["path"].name),
+                             duration=4000, bg="#f39c12")
+        else:
+            return False
+        tab = self._ctx.current_tab
+        if tab is None:
+            return False
+        if tab.view_paned is not None and tab.view_mode != snap["view_mode"]:
+            self._set_view_mode(tab, snap["view_mode"])
+        if snap["buffer"] is not None and tab.source_text is not None:
+            tab.set_source(snap["buffer"])
+            if not tab.is_untitled:
+                tab.last_mtime = snap["last_mtime"]
+                tab.external_change_notified = snap["notified"]
+            if snap["dirty"] or tab.is_untitled:
+                tab.is_dirty = snap["dirty"]
+                self._tab_manager.refresh_tabs()
+            # F3: only Markdown goes through the Markdown renderer; a .log or
+            # .csv keeps its dedicated one.
+            if tab.view_mode in ("preview", "split") and self._is_live_previewable(tab):
+                self._render_live_preview(tab)
+        if snap["zoom"] != tab.zoom_level:
+            tab.zoom_level = snap["zoom"]
+            self._renderer.apply_zoom(quiet=True)
+        return True
 
     def _apply_zoom(self): self._renderer.apply_zoom()
     def _change_folder(self):

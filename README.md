@@ -1,10 +1,12 @@
 Friedrich
 =========
 
-A Windows Markdown viewer built on Tkinter. Renders Markdown with native
-diagram support (Mermaid, inline SVG), themed CSS, an on-disk diagram cache,
-PDF export through headless Edge, and an RSVP sentence reader for `.rd`
-companion files.
+A Windows Markdown viewer and editor built on Tkinter. Renders Markdown with
+native diagram support (Mermaid, inline SVG), themed CSS, an on-disk diagram
+cache, PDF export through headless Edge, and an RSVP sentence reader for
+`.rd` companion files. The source view is a syntax-highlighted editor with a
+side-by-side live preview, an Edit menu with Markdown formatting commands,
+and Save / Save As.
 
 
 Stack
@@ -30,13 +32,13 @@ Three layers:
 
 *   **Presentation** — `md_reader.py` orchestrates the Tk root, key bindings,
     and lifecycle. `widgets/` holds Toolbar, Sidebar, NavRail, TabManager,
-    SearchBar, EmptyState, DiagramViewer, CustomMenu.
+    SearchBar, EmptyState, DiagramViewer, CustomMenu, EditorActions.
 *   **Services** — `services/` contains `file_renderer`, `mermaid_processor`,
     `svg_processor`, `diagram_cache`, `log_renderer`, `pdf_exporter`,
-    `css_loader`, `rd_parser`, `file_scanner`.
+    `css_loader`, `rd_parser`, `file_scanner`, `md_highlighter`, `md_editing`.
 *   **Domain & Application** — `domain/` (models and parsing services for
     `.rd` files and log lines) and `application/use_cases/` (file refresh,
-    log rendering, markdown export).
+    log rendering, markdown export, markdown save).
 
 Diagram pipeline:
 
@@ -72,7 +74,7 @@ md_viewer/
 ├── launch_it.sh              # Launch with --lang it
 ├── md_viewer.spec            # PyInstaller spec
 ├── application/
-│   └── use_cases/            # refresh_filesystem, render_log_file, export_markdown
+│   └── use_cases/            # refresh_filesystem, render_log_file, export_markdown, save_markdown
 ├── domain/
 │   ├── models/               # FileInfo, LogLine, TreeNode
 │   └── services/             # log_parser
@@ -87,7 +89,9 @@ md_viewer/
 │   ├── log_renderer.py       # .log files
 │   ├── rd_parser.py          # .rd file parser
 │   ├── css_loader.py         # build_html with theme CSS
-│   └── file_scanner.py       # filesystem tree builder
+│   ├── file_scanner.py       # filesystem tree builder
+│   ├── md_highlighter.py     # Markdown tokenizer + tk.Text syntax tags
+│   └── md_editing.py         # pure formatting transforms (bold, lists, headings...)
 ├── widgets/
 │   ├── toolbar.py            # Top bar, menus
 │   ├── sidebar.py            # File tree + bookmarks + recents
@@ -96,6 +100,9 @@ md_viewer/
 │   ├── custom_menu.py        # Themed popup menu
 │   ├── diagram_viewer.py     # Click-to-zoom diagram modal
 │   ├── search_bar.py         # In-page text search
+│   ├── editor_actions.py     # Edit menu / shortcut handlers on the tk.Text editor
+│   ├── line_numbers.py       # Gutter canvas drawing one number per logical line
+│   ├── current_line.py       # Caret-line background tag
 │   ├── empty_state.py        # Home screen
 │   ├── tooltip.py            # Generic tooltip
 │   └── listbox_tooltip.py    # Tooltip on Listbox rows
@@ -131,6 +138,70 @@ python -m venv .venv
 # Open a file directly (positional argument, same behavior as "Open file")
 ./.venv/Scripts/python md_reader.py path/to/document.md
 ```
+
+
+Editing
+-------
+
+Every Markdown tab has three view modes, cycled with the **◉** icon on the
+nav rail (tooltip *Preview/Source/Split*):
+
+| Mode      | Layout                              | Notes                                        |
+|-----------|-------------------------------------|----------------------------------------------|
+| `preview` | rendered HTML                       | default when a file is opened                |
+| `source`  | syntax-highlighted editor           | default for **New Markdown** (Ctrl+N)        |
+| `split`   | editor on the left, preview right   | preview re-renders 500 ms after the last edit |
+
+The editor is a `tk.Text` with undo. Typing marks the tab dirty (a `●`
+prefix on the tab label); closing a dirty tab or the window asks to save.
+Once the editor has been shown, its buffer is authoritative: switching back
+to preview renders the buffer, not the disk copy. Live preview applies to
+Markdown files only; `.log`, `.csv` and code files keep their dedicated
+renderer.
+
+Syntax highlighting (`services/md_highlighter.py`) tags headings, emphasis,
+inline code, fenced blocks, links, images, list markers, quotes, rules,
+table pipes and inline HTML. Only the visible window (plus a margin) is
+re-tagged, debounced on edit, resize and scroll; fence state is tracked from
+the top of the document. Colors live in `MD_SYNTAX_DARK` / `MD_SYNTAX_LIGHT`
+(`constants.py`) and follow the UI theme.
+
+Keyboard shortcuts:
+
+| Shortcut       | Action                                   |
+|----------------|------------------------------------------|
+| Ctrl+N         | New Markdown (untitled tab)              |
+| Ctrl+S         | Save (Save As for untitled tabs)         |
+| Ctrl+Shift+S   | Save As                                  |
+| Ctrl+Z / Ctrl+Y| Undo / Redo                              |
+| Ctrl+Shift+B   | Bold (wrap / unwrap selection)           |
+| Ctrl+I         | Italic (wrap / unwrap selection)         |
+| Tab            | Indent selection, or spaces to the next tab stop |
+| Shift+Tab      | Outdent selection, or back one tab stop  |
+| Enter          | Continue the current list, task or quote |
+
+Ctrl+B stays the sidebar toggle, hence Shift for bold. The **Edit** menu
+also offers inline code, code block, link, headings 1–3, bullet / numbered
+list and quote; its entries are disabled while the editor is not visible.
+Formatting commands are pure functions in `services/md_editing.py`; each
+one is applied as a single undo step.
+
+The editor has a line-number gutter, highlights the line holding the caret,
+indents with spaces (four per level, never a literal tab) and continues
+Markdown lists on Enter: `- item` gives another bullet, `3. step` gives
+`4. `, `- [x] done` gives an unchecked `- [ ] `, and `> quote` keeps the
+quote. Pressing Enter on an empty item ends the list instead of adding one
+more. Inside a fenced code block Enter stays plain, so a diff line such as
+`- removed` is not turned into a bullet. Each of these is a single undo step.
+
+Files are written UTF-8 with `\n` line endings via a temporary file in the
+destination folder that is then swapped over the target
+(`application/use_cases/save_markdown.py`), so an interrupted save leaves the
+previous version intact rather than a truncated file. The swap uses
+`ReplaceFileW` on Windows so the document keeps its permissions. If the file changed on disk
+while the tab has unsaved edits, the buffer is kept, a toast says so, and
+Save asks before overwriting. Image tabs are read-only. Switching the UI
+theme preserves open tabs, unsaved edits and view modes.
 
 
 Windows File Association

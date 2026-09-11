@@ -34,6 +34,23 @@ class ToolbarCommands:
     save: Callable
     save_as: Callable
     quit: Callable
+    # Edit menu (editor commands; can_edit gates them when no editor is visible)
+    can_edit: Callable[[], bool]
+    undo: Callable
+    redo: Callable
+    cut: Callable
+    copy: Callable
+    paste: Callable
+    select_all: Callable
+    format_bold: Callable
+    format_italic: Callable
+    format_code: Callable
+    format_code_block: Callable
+    format_link: Callable
+    format_heading: Callable[[int], None]
+    format_bullet_list: Callable
+    format_numbered_list: Callable
+    format_quote: Callable
 
 
 class Toolbar:
@@ -57,6 +74,7 @@ class Toolbar:
         i18n = self._ctx.i18n
         self._menu_buttons = {}
         self._menu_buttons["file"] = self._make_menubar_btn(self.frame, i18n.t("menu.file"), self._show_file_menu)
+        self._menu_buttons["edit"] = self._make_menubar_btn(self.frame, i18n.t("menu.edit"), self._show_edit_menu)
         self._menu_buttons["view"] = self._make_menubar_btn(self.frame, i18n.t("menu.view"), self._show_view_menu)
         self._menu_buttons["tools"] = self._make_menubar_btn(self.frame, i18n.t("menu.tools"), self._show_tools_menu)
 
@@ -114,6 +132,41 @@ class Toolbar:
         ]
         self._popup_menu(event, items)
 
+    def _show_edit_menu(self, event):
+        i18n = self._ctx.i18n
+        cmd = self._cmd
+        enabled = cmd.can_edit()
+
+        def gate(fn):
+            return fn if enabled else None
+
+        items = [
+            (f"{i18n.t('menu.undo')}             Ctrl+Z", gate(cmd.undo)),
+            (f"{i18n.t('menu.redo')}             Ctrl+Y", gate(cmd.redo)),
+            "---",
+            (f"{i18n.t('menu.cut')}              Ctrl+X", gate(cmd.cut)),
+            (f"{i18n.t('menu.copy')}             Ctrl+C", gate(cmd.copy)),
+            (f"{i18n.t('menu.paste')}            Ctrl+V", gate(cmd.paste)),
+            (f"{i18n.t('menu.select_all')}       Ctrl+A", gate(cmd.select_all)),
+            "---",
+            (f"{i18n.t('menu.format_bold')}      Ctrl+Shift+B", gate(cmd.format_bold)),
+            (f"{i18n.t('menu.format_italic')}    Ctrl+I", gate(cmd.format_italic)),
+            (i18n.t('menu.format_code'), gate(cmd.format_code)),
+            (i18n.t('menu.format_code_block'), gate(cmd.format_code_block)),
+            (i18n.t('menu.format_link'), gate(cmd.format_link)),
+            "---",
+        ]
+        for level in (1, 2, 3):
+            items.append((i18n.t('menu.format_heading', level=level),
+                          gate(lambda lv=level: cmd.format_heading(lv))))
+        items += [
+            "---",
+            (i18n.t('menu.format_bullet_list'), gate(cmd.format_bullet_list)),
+            (i18n.t('menu.format_numbered_list'), gate(cmd.format_numbered_list)),
+            (i18n.t('menu.format_quote'), gate(cmd.format_quote)),
+        ]
+        self._popup_menu(event, items)
+
     def _show_view_menu(self, event):
         cmd = self._cmd
         i18n = self._ctx.i18n
@@ -140,7 +193,7 @@ class Toolbar:
         clear_cmd = None if rendering else self._cmd.clear_diagram_cache
         items = [
             (f"{i18n.t('menu.refresh')}       Ctrl+R", refresh_cmd),
-            (f"{i18n.t('menu.copy_content')}     Ctrl+C", self._cmd.copy_content),
+            (i18n.t('menu.copy_content'), self._cmd.copy_content),
             "---",
             (i18n.t('menu.clear_cache'), clear_cmd),
             "---",

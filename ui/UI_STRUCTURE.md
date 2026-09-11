@@ -30,8 +30,25 @@ graph TD
     Content --> ActiveTab[Active Tab Container - fill:BOTH]
 
     ActiveTab --> SearchBar[SearchBar Frame - top, fill:X]
-    ActiveTab --> Viewer[Viewer/Source Frame - fill:BOTH, expand:True]
+    ActiveTab --> ViewPaned[ViewPaned ttk.PanedWindow - horizontal, fill:BOTH, expand:True]
+    ViewPaned --> Editor[Source Frame - weight:1]
+    Editor --> Gutter[LineNumbers Canvas - left, fill:Y]
+    Editor --> EditorText[tk.Text - left, fill:BOTH, expand:True]
+    Editor --> EditorBar[Scrollbar - right, fill:Y]
+    ViewPaned --> Viewer[HtmlFrame - weight:1]
 ```
+
+Le tab PDF e RSVP non hanno `ViewPaned`: il loro widget dedicato è pacchettizzato direttamente nell'`Active Tab Container`.
+
+### Modalità di vista (per tab)
+
+| `view_mode` | Pane presenti in `ViewPaned`      |
+| :--- | :--- |
+| `preview` | `HtmlFrame` |
+| `source` | `Source Frame` |
+| `split` | `Source Frame` (sinistra) + `HtmlFrame` (destra), sash al 50% |
+
+`TabManager.apply_view_mode(tab)` è l'unico punto che aggiunge/rimuove i pane; nessun altro componente deve chiamare `pack` su `HtmlFrame` o `Source Frame`.
 
 ## 📏 Regole di Espansione (Packing Rules)
 

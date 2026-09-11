@@ -6,7 +6,11 @@ from typing import TYPE_CHECKING, Callable, Optional
 
 if TYPE_CHECKING:
     import tkinter as tk
+    from tkinter import ttk
     from tkinterweb import HtmlFrame
+    from services.md_highlighter import MarkdownHighlighter
+    from widgets.line_numbers import LineNumbers
+    from widgets.current_line import CurrentLineHighlight
     from i18n import I18nManager
     from widgets.search_bar import SearchBar
 
@@ -14,7 +18,7 @@ if TYPE_CHECKING:
 @dataclass
 class TabInfo:
     path: Path
-    view_mode: str = "preview"  # "preview" or "source"
+    view_mode: str = "preview"  # "preview", "source" or "split" (editor + live preview)
     zoom_level: int = 100
     last_html_body: str = ""
     scroll_pos: float = 0.0
@@ -22,6 +26,8 @@ class TabInfo:
     last_mtime: float = 0.0
     is_dirty: bool = False
     is_untitled: bool = False
+    read_only: bool = False          # e.g. image tabs: source view is metadata, never saved
+    external_change_notified: bool = False  # toast shown once per external edit while dirty
     # Widgets specific to this tab (created and managed by TabManager)
     container: Optional[tk.Frame] = None
     html_frame: Optional[HtmlFrame] = None
@@ -30,6 +36,33 @@ class TabInfo:
     source_text: Optional[tk.Text] = None
     source_frame: Optional[tk.Frame] = None
     search_bar: Optional[SearchBar] = None
+    # Horizontal PanedWindow hosting html_frame / source_frame (None for PDF / RSVP tabs)
+    view_paned: Optional[ttk.PanedWindow] = None
+    highlighter: Optional[MarkdownHighlighter] = None
+    line_numbers: Optional[LineNumbers] = None
+    current_line: Optional[CurrentLineHighlight] = None
+
+    def set_source(self, content: str) -> None:
+        """Replace the editor buffer programmatically.
+
+        Honours read-only tabs (the widget is disabled), clears the undo
+        stack (a load is not a user edit) and resets the modified flag so the
+        dirty tracker ignores it; callers decide the dirty state explicitly.
+        """
+        txt = self.source_text
+        if txt is None:
+            return
+        disabled = str(txt.cget("state")) == "disabled"
+        if disabled:
+            txt.configure(state="normal")
+        try:
+            txt.delete("1.0", "end")
+            txt.insert("1.0", content)
+            txt.edit_reset()
+            txt.edit_modified(False)
+        finally:
+            if disabled:
+                txt.configure(state="disabled")
 
 
 @dataclass
@@ -61,6 +94,9 @@ class AppContext:
     left_visible: bool = True
     tree_cache: list[Path] = field(default_factory=list)
     
+    # Anchor to re-apply on the next re-render of the active tab (consumed once)
+    last_fragment: Optional[str] = None
+
     # i18n Manager
     i18n: Optional[I18nManager] = None
 

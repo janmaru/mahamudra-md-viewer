@@ -25,26 +25,33 @@ def set_document(file_path: str | Path) -> None:
     _current_doc = Path(file_path).stem
 
 
-def _doc_dir() -> Path:
-    return _CACHE_DIR / _current_doc
+def current_document() -> str:
+    """Key of the document set by the last ``set_document`` call."""
+    return _current_doc
+
+
+def _doc_dir(doc: str | None = None) -> Path:
+    # Callers running off the UI thread pass ``doc`` explicitly: the module
+    # global may already point at another document by the time they run.
+    return _CACHE_DIR / (doc or _current_doc)
 
 
 def _hash_code(code: str) -> str:
     return hashlib.sha256(code.encode("utf-8")).hexdigest()
 
 
-def get(code: str) -> str | None:
+def get(code: str, doc: str | None = None) -> str | None:
     """Return cached base64 PNG for the given diagram code, or None."""
     key = _hash_code(code)
-    cache_file = _doc_dir() / f"{key}.b64"
+    cache_file = _doc_dir(doc) / f"{key}.b64"
     if cache_file.exists():
         return cache_file.read_text(encoding="ascii")
     return None
 
 
-def put(code: str, png_b64: str) -> None:
+def put(code: str, png_b64: str, doc: str | None = None) -> None:
     """Store base64 PNG in cache."""
-    doc_dir = _doc_dir()
+    doc_dir = _doc_dir(doc)
     doc_dir.mkdir(parents=True, exist_ok=True)
     key = _hash_code(code)
     cache_file = doc_dir / f"{key}.b64"

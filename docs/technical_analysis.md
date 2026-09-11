@@ -189,3 +189,132 @@ Pinning from a running window on Windows 11 is **not** equivalent: the OS may in
 
 ### Icon cache caveat
 After AUMID/icon changes, the Windows shell may keep stale tiles in its icon cache. To force a refresh: stop `explorer.exe`, delete `%LOCALAPPDATA%\Microsoft\Windows\Explorer\iconcache_*.db` and `thumbcache_*.db`, restart `explorer.exe`.
+
+## Architectural Pattern: View Modes and Live Preview
+
+### Context
+Each document tab owns both an `HtmlFrame` (preview) and a `tk.Text` (editor). Historically they were packed directly into the tab container and swapped with `pack_forget`. The split view needs both visible at once, and Tk widgets cannot be re-parented, so the layout was moved to a per-tab horizontal `ttk.PanedWindow` created once in `TabManager._build_document_views`.
+
+### View mode contract
+`TabInfo.view_mode` is one of `preview`, `source`, `split` (`widgets/tab_manager.py: VIEW_MODES`). `TabManager.apply_view_mode(tab)` is the single place that translates the mode into panes:
+
+| Mode      | Panes (left → right)          |
+|-----------|-------------------------------|
+| `preview` | `html_frame`                  |
+| `source`  | `source_frame`                |
+| `split`   | `source_frame`, `html_frame`  |
+
+Panes not wanted are `forget`-ed, missing ones are `insert`-ed at their position (`"end"` when the index equals the pane count, which ttk rejects as numeric). PDF and RSVP tabs have `view_paned is None` and are untouched.
+
+### Sash placement
+ttk sizes a freshly inserted pane from its requested width, so the second pane can collapse to zero. `TabManager._center_sash` sets `sashpos(0, width // 2)` after a short delay, verifies the result and retries a few times: a `sashpos` issued before the first layout pass is overwritten by that pass.
+
+### Buffer-authoritative rule
+`MarkdownReader._set_view_mode(tab, mode)` computes which surface *appears*:
+
+- editor appears (`preview → source|split`) and the tab is clean → `_fill_source_from_disk`; dirty or untitled tabs keep their buffer;
+- preview appears (`source → preview|split`) → `_refresh_preview_from_editor`: dirty, untitled or Markdown tabs render the buffer via `FileRenderer.render_in_memory`; other extensions (`.log`, `.csv`, code, images) go through `load_file` so their dedicated renderer is used.
+
+`FileRenderer.load_file` honours `split` by filling both surfaces (`show_html` / `show_source` flags). `update_html`, the search bar, PDF export and the Markdown theme switch treat `split` like `preview` for the HTML side and like `source` for the text side.
+
+### Live preview
+```mermaid
+sequenceDiagram
+    autonumber
+    participant T as tk.Text
+    participant TM as TabManager._bind_dirty
+    participant R as MarkdownReader
+    participant FR as FileRenderer
+    T->>TM: <<Modified>>
+    TM->>TM: is_dirty = True, refresh_tabs()
+    TM->>R: on_source_changed(tab)
+    R->>R: after_cancel(pending) / after(500ms)
+    R->>FR: render_in_memory(buffer, base_path)
+    FR->>FR: _load_html_keep_scroll (yview saved / restored)
+    FR-->>R: _render_diagrams_async (worker, cache by sha256)
+```
+
+The debounce job is cancelled on every keystroke and on view-mode changes; leaving `split` for `preview` with a pending job flushes it so the preview is not one edit behind. Only Markdown extensions (`MARKDOWN_EXTS`) and untitled tabs are live-rendered.
+
+Diagram workers are stamped with `FileRenderer._render_seq`: a worker whose stamp is no longer the latest merges its PNGs into the registry but does not touch the HTML frame, so a slow `mmdc` run cannot revert the preview to older text. No worker is started when the document has no Mermaid / SVG block. Untitled tabs cache their diagrams under their virtual name (`untitled-N`).
+
+Programmatic loads of the editor go through `TabInfo.set_source`, which temporarily enables a disabled (read-only) widget, calls `edit_reset()` (a disk read is not an undoable action, otherwise a single Undo would empty the buffer) and resets the modified flag. The Markdown theme switch re-renders only the HTML side (`_render_live_preview` for dirty / untitled / clean-Markdown-in-split tabs) and never reloads the editor.
+
+### Cache key on worker threads
+`diagram_cache` keeps a module-level "current document" for callers on the UI thread, but the async worker captures `cache_document()` at spawn time and passes it down (`inject_mermaid_svgs(..., doc=)` → `cache_get/put(..., doc)`). Without this, a tab switch during a slow `mmdc` run would file the PNGs under the newly selected document's folder.
+
+### The buffer is never overwritten by a disk load
+`FileRenderer._may_replace_buffer()` gates both `show_source` branches of `load_file`: when the active tab is dirty or untitled, no disk content is written into the editor. This is the single choke point for every caller — tab switch, anchor navigation, refresh, theme change — because `set_source` also clears the undo stack, so an overwrite would be unrecoverable. Anchor clicks route through `MarkdownReader._render_from_buffer_or_disk`, which re-renders an unsaved buffer (`render_in_memory(..., fragment=)`) instead of re-reading the file, so a table-of-contents link inside a document being edited scrolls without touching the text.
+
+### External modifications and read-only tabs
+`TabInfo.last_mtime` is the mtime of the content the buffer is based on (set on load and save). `_on_tab_change` never reloads a dirty tab whose file changed on disk; it shows `toast.file_changed_on_disk` once (`external_change_notified`). `_save_current` runs `_confirm_overwrite_if_changed`, an `askyesno` gate when the disk mtime differs from `last_mtime`. Image tabs set `read_only`: the editor widget is `state="disabled"`, dirty tracking is not installed, `EditorActions._target` returns `None` and both save paths refuse with `toast.read_only_file`.
+
+### UI theme rebuild
+`_toggle_ui_theme` destroys and recreates every widget. Before doing so it snapshots each tab (`_snapshot_tab`: path, untitled, dirty, view mode, zoom, base mtime and the buffer for dirty / untitled tabs) and replays them with `_restore_tab` (`add_untitled_tab` or `_load_file`, `_set_view_mode`, `set_source`, `apply_zoom(quiet=True)`). A file that disappeared meanwhile is restored as an untitled tab when it still carries unsaved text, and dropped otherwise; the active tab is re-mapped through the list of positions actually restored, since a dropped tab shifts every later index.
+
+### Where the rendered body lives
+`FileRenderer._remember_body` stores each render on the active `TabInfo` (`last_html_body`) as well as on the context. `apply_zoom` repaints from the *tab's* copy, so zooming a `.log`, `.csv`, code or image tab no longer paints the last Markdown document into it. `ctx.last_fragment` is consumed (and cleared) by `update_html`, so the anchor is re-applied exactly once — after the async diagram swap changes the document height — and never disables scroll preservation afterwards.
+
+### Scroll preservation and untitled tabs
+`FileRenderer._load_html_keep_scroll` records `HtmlFrame.yview()[0]` before `load_html` and restores it 50 ms later, unless a fragment is requested. It is used by `render_in_memory` and by `update_html` (the async diagram swap), so neither the live preview nor a late diagram jumps the reader to the top. `update_html` also resolves the `base_url` of untitled tabs against `ctx.scan_dir`: their virtual path is relative and `Path(".").as_uri()` raises.
+
+## Architectural Pattern: Editor Syntax Highlighting
+
+### Design
+`services/md_highlighter.py` separates a pure tokenizer from the Tk binding:
+
+- `tokenize(lines, first, last) -> list[Token]` scans every line from the top to track fenced-code state (```` ``` ```` / `~~~`, matching marker family and length), but emits tokens only for the requested window. Block rules run first (fence, rule, heading, quote, list marker, table pipes), then inline rules; code spans are matched first and shield their content from emphasis, links, images and HTML.
+- `MarkdownHighlighter(text, palette, font_family, font_size)` configures one tag per token kind (`TAGS`), lowers them below later tags such as the search highlights, and re-tags the visible range ± 100 lines, debounced at 150 ms. Triggers: `<<Modified>>` (also fired by programmatic inserts, since Tk queues the event before `edit_modified(False)` is reached), `<Configure>` and the `yscrollcommand` wrapper installed by `TabManager`.
+- Palettes are `MD_SYNTAX_DARK` / `MD_SYNTAX_LIGHT` in `constants.py`, chosen from `ctx.ui_theme`. `FileRenderer.apply_zoom` calls `set_font_size` so bold/italic tag fonts follow the editor font.
+
+### Formatting commands
+`services/md_editing.py` holds pure functions returning an `EditResult(text, sel_start, sel_end)`; `widgets/editor_actions.py` maps them onto the active `tk.Text`. Each command is applied with `Text.replace(start, end, new)`, which Tk records as a single undo step, wrapped in `edit_separator()` calls. Line-oriented commands extend the selection to whole lines and drop a trailing selection that ends at column 0 so the next line is not dragged in.
+
+Shortcuts are installed per editor widget by `TabManager` (`source_key_bindings`) and return `"break"`: `Ctrl+I` would otherwise trigger the Text class binding that inserts a tab. `Ctrl+B` remains the sidebar toggle, so bold is `Ctrl+Shift+B`. The Edit menu (`Toolbar._show_edit_menu`) gates every entry on `EditorActions.can_edit()`, which is false in preview mode and for PDF / RSVP tabs.
+
+## Architectural Pattern: Editor Ergonomics
+
+### Split of responsibilities
+The behaviour lives in pure functions (`services/md_editing.py`) and the Tk plumbing in `widgets/editor_actions.py`, the same split used by the formatting commands:
+
+| Concern | Pure function | Tk adapter |
+|---------|---------------|------------|
+| Tab with no selection | `spaces_to_tab_stop(column)` | `EditorActions.indent` |
+| Tab / Shift+Tab on a selection | `indent_block`, `outdent_block` | `EditorActions.indent` / `outdent` |
+| Shift+Tab with no selection | `outdent_before_caret(prefix)` | `EditorActions.outdent` |
+| Enter | `continue_list(line) -> Continuation \| None` | `EditorActions.newline` |
+
+`continue_list` returns `None` for a line that is not a list, task or quote, and `Continuation(clear_line=True)` for an item whose body is empty. Indentation is measured in `INDENT_WIDTH` (4) spaces; a literal tab counts as one full level when out-denting.
+
+### Handlers that decline
+`TabManager` installs these on the editor through `source_key_bindings` and now honours the handler's return value:
+
+```python
+tab.source_text.bind(sequence, lambda e, h=handler: "break" if h() is not False else None)
+```
+
+The protocol has three outcomes:
+
+| Return | Meaning | Effect |
+|--------|---------|--------|
+| `False` | declined, but the editor is live | Tk applies its own binding (Enter on ordinary text inserts a newline) |
+| `True` | handled | the key is swallowed |
+| `None` | there is no editable surface (preview, read-only tab) | the key is swallowed, so Tk cannot type into a hidden or read-only buffer |
+
+### Keys must not reach a hidden editor
+In preview the editor is unmapped but can still hold the keyboard focus. Moving the focus to the `HtmlFrame` is **not** an option: `Tab` on a focused tkinterweb frame segfaults the interpreter (reproduced on tkinterweb 4.25.2). Instead `TabManager._guard_hidden_keys`, bound to `<Key>`, swallows anything printable while `view_mode == "preview"`, and lets Control/Alt combinations through so the global shortcuts (Ctrl+S, Ctrl+F…) keep working. `Tab` and `Enter` are covered by their own bindings returning `None`.
+
+### Fenced code blocks
+`EditorActions.newline` asks `services.md_highlighter.is_inside_fence` before continuing a list, so a `- removed line` inside a ```` ```diff ```` block is left alone. The scan only runs when the line already looks like a list item, so ordinary prose pays nothing for it.
+
+### Gutter
+`widgets/line_numbers.py` is a `tk.Canvas` packed to the left of the editor inside `source_frame`. It walks the visible **line numbers** and measures each one with `dlineinfo(f"{line}.0")`: the index must carry column 0, because with `wrap="word"` an index holding a real column resolves to a continuation row and would place the number tens of pixels off. `dlineinfo` returns `None` only for the topmost line when its first row is scrolled above the viewport; that number is pinned to the top edge so the line being read always has one. Redraws are coalesced with `after_idle`; the triggers are the `yscrollcommand` wrapper, `<Configure>`, and the caret events below. Its width is recomputed from the digit count and the font, so it grows at 100 and 1000 lines and follows `apply_zoom` through `set_font_size`.
+
+### Caret tracking
+Tk fires no event when the insertion mark moves, so `TabManager` binds one handler to `<KeyRelease>`, `<ButtonRelease-1>`, `<<Modified>>`, `<Configure>`, `<MouseWheel>` and the custom `<<CaretMoved>>`, and both the gutter and `widgets/current_line.py` follow it. `EditorActions._finish` emits `<<CaretMoved>>` so programmatic edits update the same way. `CurrentLineHighlight` re-tags only when the line number actually changes, and keeps its tag at the bottom of the priority stack: it sets `background` only, so the syntax colours (`foreground`) are untouched and the selection and search highlights stay on top.
+
+### Atomic save
+`SaveMarkdownUseCase._write` writes to a `NamedTemporaryFile` created **in the destination folder** (so the swap cannot cross a filesystem), flushes it and calls `os.fsync`, then swaps it over the target through `_replace_preserving_metadata`. On any `OSError` the temporary file is removed and the previous version is left untouched. The temporary name is prefixed with a dot, capped at 60 characters of the document name and suffixed `.tmp`: without the cap, a long file name plus tempfile's random suffix could exceed the 255-character component limit and make the document unsavable.
+
+The swap itself is `ReplaceFileW` on Windows and `shutil.copymode` + `os.replace` elsewhere. `os.replace` alone hands the document the *temporary file's* security descriptor, so an explicit ACE (say `Everyone:(R)`) would be silently dropped on every save; `ReplaceFileW` is the documented API for replacing a file while keeping its ACLs, attributes and creation time, and the portable pair is used when it refuses (some network shares). The containing directory is not fsync'd, so the rename is not durable across a power loss — acceptable for a desktop editor.
+
