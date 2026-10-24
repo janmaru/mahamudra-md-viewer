@@ -9,6 +9,8 @@ import tempfile
 import os
 import shutil
 import base64
+import sys
+from pathlib import Path
 
 # Regex for Mermaid fenced code blocks
 MERMAID_PATTERN = r'```mermaid\s*(.*?)\s*```'
@@ -104,11 +106,23 @@ def _render_mermaid_to_png_b64(code: str, doc: str | None = None) -> str | None:
         tmp_out = tmp_in.replace(".mmd", ".png")
 
         cmd = [mmdc, "-i", tmp_in, "-o", tmp_out, "-b", "white", "-s", "2"]
-        if mmdc.endswith("npx") or mmdc.endswith("npx.cmd"):
-            cmd = [mmdc, "mmdc", "-i", tmp_in, "-o", tmp_out, "-b", "white", "-s", "2"]
+        if Path(mmdc).stem.lower() == "npx":
+            # The npm package is @mermaid-js/mermaid-cli; "npx mmdc" alone would
+            # look for an unrelated package called "mmdc".
+            cmd = [mmdc, "-y", "-p", "@mermaid-js/mermaid-cli", "mmdc",
+                   "-i", tmp_in, "-o", tmp_out, "-b", "white", "-s", "2"]
+        if sys.platform.startswith("linux"):
+            # Ubuntu 23.10+ blocks Chromium's sandbox via AppArmor, so puppeteer
+            # can't start it; it only renders the local diagram source here.
+            cfg = tmp_in.replace(".mmd", ".puppeteer.json")
+            with open(cfg, "w", encoding="utf-8") as f:
+                f.write('{"args": ["--no-sandbox"]}')
+            cmd += ["-p", cfg]
 
-        subprocess.run(cmd, check=True, capture_output=True, timeout=30,
-                       creationflags=subprocess.CREATE_NO_WINDOW)
+        # CREATE_NO_WINDOW exists only on Windows; the first run through npx
+        # downloads mermaid-cli, hence the longer timeout.
+        subprocess.run(cmd, check=True, capture_output=True, timeout=180,
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
         if os.path.exists(tmp_out):
             with open(tmp_out, "rb") as img:
@@ -118,7 +132,8 @@ def _render_mermaid_to_png_b64(code: str, doc: str | None = None) -> str | None:
     except Exception:
         return None
     finally:
-        for f in (tmp_in, tmp_out):
+        cfg = tmp_in.replace(".mmd", ".puppeteer.json") if tmp_in else None
+        for f in (tmp_in, tmp_out, cfg):
             if f and os.path.exists(f):
                 os.remove(f)
     return None

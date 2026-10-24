@@ -4,6 +4,7 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Sequence
 
+from constants import FONT, FONT_MONO
 from services.rd_parser import InlineSpan, Sentence
 
 _MIN_SENTENCE_MS = 800
@@ -38,7 +39,7 @@ class RsvpPlayer(ttk.Frame):
         self._text = tk.Text(
             self,
             wrap="word",
-            font=("Segoe UI", 28),
+            font=(FONT, 28),
             relief="flat",
             padx=40,
             pady=40,
@@ -49,11 +50,11 @@ class RsvpPlayer(ttk.Frame):
         self._text.grid(row=0, column=0, sticky="nsew", padx=20, pady=20)
 
         self._text.tag_configure("normal", justify="center")
-        self._text.tag_configure("bold", font=("Segoe UI", 28, "bold"), justify="center")
-        self._text.tag_configure("italic", font=("Segoe UI", 28, "italic"), justify="center")
+        self._text.tag_configure("bold", font=(FONT, 28, "bold"), justify="center")
+        self._text.tag_configure("italic", font=(FONT, 28, "italic"), justify="center")
         self._text.tag_configure(
             "code",
-            font=("Consolas", 26),
+            font=(FONT_MONO, 26),
             background="#2d2d30",
             foreground="#d7ba7d",
             justify="center",

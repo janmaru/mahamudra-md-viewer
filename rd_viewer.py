@@ -6,6 +6,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
+from constants import FONT
 from services.rd_parser import parse_rd
 from widgets.rsvp_player import RsvpPlayer
 
@@ -44,7 +45,7 @@ def main(argv: list[str] | None = None) -> int:
     header = ttk.Frame(container)
     header.grid(row=0, column=0, sticky="ew", padx=20, pady=(20, 0))
     header.columnconfigure(0, weight=1)
-    ttk.Label(header, textvariable=title_var, font=("Segoe UI", 11)).grid(
+    ttk.Label(header, textvariable=title_var, font=(FONT, 11)).grid(
         row=0, column=0, sticky="w"
     )
     ttk.Button(header, text="Open .rd…", command=lambda: _open_dialog(player, title_var)).grid(

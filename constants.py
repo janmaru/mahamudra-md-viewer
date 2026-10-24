@@ -10,8 +10,14 @@ else:
     APP_DIR = Path(__file__).resolve().parent
 STYLES_DIR = APP_DIR / "styles"
 
-FONT = "Segoe UI"
-FONT_MONO = "Consolas"
+# Segoe UI / Consolas exist only on Windows; elsewhere Tk would silently pick
+# a fallback, so name fonts that ship with common Linux desktops.
+if sys.platform == "win32":
+    FONT = "Segoe UI"
+    FONT_MONO = "Consolas"
+else:
+    FONT = "Noto Sans"
+    FONT_MONO = "DejaVu Sans Mono"
 
 DARK_COLORS = {
     "titlebar": "#323233",
