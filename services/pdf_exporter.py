@@ -3,7 +3,9 @@ from __future__ import annotations
 import html as html_module
 import os
 import re
+import shutil
 import subprocess
+import sys
 import tempfile
 import tkinter as tk
 from pathlib import Path
@@ -20,7 +22,16 @@ if TYPE_CHECKING:
     from services.file_renderer import FileRenderer
 
 
+# Chromium-based browsers that support --headless --print-to-pdf, by name on PATH.
+_LINUX_BROWSERS = (
+    "microsoft-edge", "microsoft-edge-stable", "google-chrome", "google-chrome-stable",
+    "chromium", "chromium-browser", "brave-browser",
+)
+
+
 def _find_msedge() -> str:
+    if sys.platform != "win32":
+        return _find_linux_browser()
     standard_paths = [
         os.path.expandvars(r"%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe"),
         os.path.expandvars(r"%ProgramFiles%\Microsoft\Edge\Application\msedge.exe"),
@@ -30,6 +41,20 @@ def _find_msedge() -> str:
         if os.path.exists(path):
             return path
     return "msedge"
+
+
+def _find_linux_browser() -> str:
+    """Edge/Chrome/Chromium on PATH, else a Chromium downloaded by Playwright."""
+    for name in _LINUX_BROWSERS:
+        path = shutil.which(name)
+        if path:
+            return path
+    cache = Path(os.environ.get("PLAYWRIGHT_BROWSERS_PATH", Path.home() / ".cache" / "ms-playwright"))
+    candidates = sorted(cache.glob("chromium-*/chrome-linux*/chrome"), reverse=True)
+    if candidates:
+        return str(candidates[0])
+    raise FileNotFoundError(
+        "no Chromium-based browser found (install Chrome, Chromium or Edge)")
 
 
 def export_pdf(ctx: AppContext, renderer: FileRenderer) -> None:
@@ -102,6 +127,9 @@ def export_pdf(ctx: AppContext, renderer: FileRenderer) -> None:
             f"--print-to-pdf={dest_path}",
             temp_html
         ]
+        if sys.platform.startswith("linux"):
+            # Same AppArmor restriction as mermaid-cli on Ubuntu 23.10+.
+            cmd.insert(1, "--no-sandbox")
         subprocess.run(cmd, check=True, capture_output=True)
         ctx.show_toast(ctx.i18n.t("success.pdf_exported"))
     except Exception as e:

@@ -140,6 +140,28 @@ python -m venv .venv
 ```
 
 
+### Linux
+
+Tested on Ubuntu 26.04 (Python 3.14). Tkinter comes from the system:
+
+```bash
+sudo apt install python3-tk python3-venv      # if not already present
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+./launch_it.sh                                # or: .venv/bin/python md_reader.py --lang it
+```
+
+*   **Fonts**: Noto Sans and DejaVu Sans Mono replace Segoe UI and Consolas.
+*   **PDF export** uses the first Chromium-based browser found: Edge, Chrome,
+    Chromium or Brave on `PATH`, else a Chromium downloaded by Playwright
+    (`~/.cache/ms-playwright`).
+*   **Mermaid** works with `mmdc` or, if only Node is installed, through
+    `npx @mermaid-js/mermaid-cli` (downloaded on first use).
+*   Chromium runs with `--no-sandbox` for Mermaid and PDF: Ubuntu 23.10+
+    blocks its sandbox through AppArmor. It only renders local content.
+*   The Windows file association scripts (`scripts/*.ps1`) don't apply.
+
+
 Editing
 -------
 

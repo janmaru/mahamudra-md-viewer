@@ -76,7 +76,16 @@ class MarkdownReader(tk.Tk):
 
         icon_path = APP_DIR / "app_icon.ico"
         if icon_path.exists():
-            self.iconbitmap(str(icon_path))
+            if sys.platform == "win32":
+                self.iconbitmap(str(icon_path))
+            else:
+                # Tk on Linux/macOS can't read .ico: load it through Pillow instead.
+                try:
+                    from PIL import Image, ImageTk
+                    self._icon_image = ImageTk.PhotoImage(Image.open(icon_path))
+                    self.iconphoto(True, self._icon_image)
+                except Exception:
+                    pass
 
         geo = load_settings(ctx)
         self.colors = DARK_COLORS if ctx.ui_theme == "dark" else LIGHT_COLORS
